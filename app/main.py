@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from app.api.routes import router
+load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
+
+from app.api.routes import router  # noqa: E402
 
 app = FastAPI(
     title="IADT — AI Processing Microservice",
