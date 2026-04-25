@@ -8,6 +8,6 @@ from app.main import app
 
 @pytest.fixture(scope="session")
 def client() -> TestClient:
-    """TestClient síncrono reutilizado em toda a suite de rotas."""
+    """Synchronous TestClient reused across all route tests."""
     with TestClient(app) as c:
         yield c

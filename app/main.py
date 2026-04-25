@@ -5,10 +5,10 @@ from fastapi import FastAPI
 from app.api.routes import router
 
 app = FastAPI(
-    title="IADT — Microsserviço de Processamento de IA",
+    title="IADT — AI Processing Microservice",
     description=(
-        "Recebe um diagrama de arquitetura (base64 ou URL), "
-        "processa via Gemini Vision e devolve análise estruturada em JSON."
+        "Receives an architecture diagram (base64 or URL), "
+        "processes it via Gemini Vision and returns structured analysis in JSON."
     ),
     version="0.1.0",
 )

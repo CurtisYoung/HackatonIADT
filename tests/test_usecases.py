@@ -1,28 +1,39 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from app.domain.schemas import AnaliseIAOutput, DiagramaInput
-from app.usecases.analisar_diagrama import AnalisarDiagramaUseCase
+from app.domain.schemas import AIAnalysisOutput, DiagramInput
+from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
+
+_FAKE_OUTPUT = AIAnalysisOutput(
+    identified_components=["API Gateway", "Database"],
+    architectural_risks=["Single point of failure in the gateway."],
+    recommendations=["Add redundancy to the gateway."],
+)
 
 
 @pytest.mark.asyncio
-async def test_analisar_diagrama_usecase_retorna_output_esperado() -> None:
-    """O use case deve retornar uma instância válida de AnaliseIAOutput
-    quando recebe um DiagramaInput com imagem_base64 preenchida."""
-    entrada = DiagramaInput(imagem_base64="aW1hZ2VtX2Zha2VfYmFzZTY0")
+async def test_analyze_diagram_usecase_returns_expected_output() -> None:
+    """The use case should return a valid AIAnalysisOutput instance
+    when given a DiagramInput with image_base64 filled in."""
+    input_data = DiagramInput(image_base64="aW1hZ2VtX2Zha2VfYmFzZTY0")
 
-    use_case = AnalisarDiagramaUseCase()
-    resultado = await use_case.execute(entrada)
+    mock_client = AsyncMock()
+    mock_client.analyze_image.return_value = _FAKE_OUTPUT
 
-    assert isinstance(resultado, AnaliseIAOutput)
-    assert isinstance(resultado.componentes_identificados, list)
-    assert len(resultado.componentes_identificados) > 0
-    assert isinstance(resultado.riscos_arquiteturais, list)
-    assert len(resultado.riscos_arquiteturais) > 0
-    assert isinstance(resultado.recomendacoes, list)
-    assert len(resultado.recomendacoes) > 0
+    use_case = AnalyzeDiagramUseCase(ai_client=mock_client)
+    result = await use_case.execute(input_data)
 
-    # Garante que a validação de tamanho máximo por item está sendo respeitada
-    for risco in resultado.riscos_arquiteturais:
-        assert len(risco) <= 300, f"Risco excede 300 caracteres: {risco!r}"
+    mock_client.analyze_image.assert_awaited_once_with(input_data.image_base64)
+    assert isinstance(result, AIAnalysisOutput)
+    assert isinstance(result.identified_components, list)
+    assert len(result.identified_components) > 0
+    assert isinstance(result.architectural_risks, list)
+    assert len(result.architectural_risks) > 0
+    assert isinstance(result.recommendations, list)
+    assert len(result.recommendations) > 0
+
+    for risk in result.architectural_risks:
+        assert len(risk) <= 300, f"Risk exceeds 300 characters: {risk!r}"
