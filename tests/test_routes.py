@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
-from app.api.routes import _get_gemini_client
+from app.api.routes import _get_gemini_client, _get_repository
+from app.domain.repositories import OutputRepository
 from app.domain.schemas import AIAnalysisOutput
 from app.main import app
 
@@ -20,7 +21,9 @@ EXPECTED_KEYS: frozenset[str] = frozenset(
 
 _FAKE_OUTPUT = AIAnalysisOutput(
     identified_components=["API Gateway", "Database"],
-    architectural_risks=["Single point of failure in the gateway."],
+    architectural_risks=[
+        "Single point of failure in the API gateway causes total service outage during peak load."
+    ],
     recommendations=["Add redundancy to the gateway."],
 )
 
@@ -31,13 +34,20 @@ def _mock_gemini_client() -> AsyncMock:
     return mock
 
 
-# Override the dependency globally for all route tests
+def _mock_repository() -> AsyncMock:
+    mock = AsyncMock(spec=OutputRepository)
+    mock.save.return_value = None
+    return mock
+
+
+# Override dependencies globally for all route tests
 app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
+app.dependency_overrides[_get_repository] = _mock_repository
 
 
 def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
-    """POST /analyze-diagram with a valid payload should return HTTP 200 and
-    a JSON containing exactly the keys defined in AIAnalysisOutput."""
+    """POST /analyze-diagram com payload válido deve retornar HTTP 200 e
+    um JSON contendo exatamente as chaves definidas em AIAnalysisOutput."""
     response = client.post(ENDPOINT, json=VALID_PAYLOAD)
 
     assert response.status_code == 200
@@ -49,7 +59,7 @@ def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> N
 
 
 def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
-    """All output schema fields should be lists."""
+    """Todos os campos do schema de saída devem ser listas."""
     response = client.post(ENDPOINT, json=VALID_PAYLOAD)
     body = response.json()
 
@@ -60,15 +70,36 @@ def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
 
 
 def test_analyze_diagram_missing_image_base64_returns_422(client: TestClient) -> None:
-    """Payload without the required image_base64 field should return HTTP 422."""
+    """Payload sem o campo obrigatório image_base64 deve retornar HTTP 422."""
     response = client.post(ENDPOINT, json={})
 
     assert response.status_code == 422
 
 
 def test_analyze_diagram_accepts_optional_url(client: TestClient) -> None:
-    """The url field is optional; sending it should not change the status_code."""
+    """O campo url é opcional; enviá-lo não deve alterar o status_code."""
     payload = {**VALID_PAYLOAD, "url": "https://example.com/diagram.png"}
     response = client.post(ENDPOINT, json=payload)
 
     assert response.status_code == 200
+
+
+def test_analyze_diagram_returns_503_when_ai_unavailable(client: TestClient) -> None:
+    """Quando o cliente de IA lança ServerError retriável, o endpoint deve retornar HTTP 503."""
+    from google.genai import errors as genai_errors
+
+    def _mock_failing_gemini_client() -> AsyncMock:
+        # Simula todos os modelos indisponíveis — ServerError com código 503.
+        mock = AsyncMock()
+        err = genai_errors.ServerError.__new__(genai_errors.ServerError)
+        err.code = 503
+        mock.analyze_image.side_effect = err
+        return mock
+
+    app.dependency_overrides[_get_gemini_client] = _mock_failing_gemini_client
+    try:
+        response = client.post(ENDPOINT, json=VALID_PAYLOAD)
+        assert response.status_code == 503
+    finally:
+        # Restaura o mock original para não contaminar outros testes.
+        app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
