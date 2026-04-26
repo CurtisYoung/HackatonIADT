@@ -9,7 +9,7 @@ from app.infrastructure.ai_client import GeminiClient
 from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 
-router = APIRouter(prefix="/analyze-diagram", tags=["Diagram Analysis"])
+router = APIRouter(prefix="/analyze-diagram", tags=["Analysis"])
 
 
 def _get_gemini_client() -> GeminiClient:

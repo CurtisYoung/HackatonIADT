@@ -1,147 +1,139 @@
-# iadt-processor-hackathon
+﻿# IADT — AI Architecture Diagram Analyzer
 
-Microsserviço de análise automatizada de diagramas arquiteturais via IA Generativa — desenvolvido para o desafio **FIAP Secure Systems** (Hackathon IADT).
+Microsserviço de análise automatizada de diagramas arquiteturais via IA Generativa,  
+desenvolvido para o desafio **FIAP Secure Systems** (Hackathon IADT).
 
----
-
-## 1. Descrição do Problema
-
-A **FIAP Secure Systems** demanda um componente de back-end capaz de receber um diagrama de arquitetura de software (enviado como imagem codificada em Base64 ou via URL) e produzir automaticamente uma análise técnica estruturada contendo:
-
-| Campo de Saída | Descrição |
-|---|---|
-| `componentes_identificados` | Lista de componentes de infraestrutura presentes no diagrama |
-| `riscos_arquiteturais` | Lista de vulnerabilidades e pontos de falha detectados |
-| `recomendacoes` | Lista de ações corretivas e melhorias propostas |
-
-O output deve ser **determinístico, validado e consumível por outros sistemas** — eliminando respostas em linguagem natural não estruturada geradas diretamente pelo LLM.
+> **Convenção de código:** todo o código-fonte está em **Inglês**; comentários, docstrings e esta documentação estão em **Português (pt-BR)**.
 
 ---
 
-## 2. Arquitetura Proposta
+## 1. Visão Geral
 
-O sistema segue os princípios da **Clean Architecture**, separando responsabilidades em camadas com dependências que fluem de fora para dentro:
+O sistema recebe um diagrama de arquitetura de software (imagem codificada em Base64) e produz automaticamente uma análise técnica estruturada com três campos:
 
-```
-┌──────────────────────────────────────────────┐
-│  Camada HTTP  (app/api/routes.py)            │  FastAPI · APIRouter
-│  Recebe e valida o payload de entrada        │
-└─────────────────────┬────────────────────────┘
-                      │ DiagramaInput (Pydantic)
-┌─────────────────────▼────────────────────────┐
-│  Camada Use Case  (app/usecases/)            │  Python puro · sem framework
-│  Orquestra a chamada ao "Cérebro de IA"      │
-└─────────────────────┬────────────────────────┘
-                      │ prompt + imagem
-┌─────────────────────▼────────────────────────┐
-│  Cérebro de IA  (infrastructure — externa)   │  Gemini Vision + Instructor
-│  Única peça que conhece o LLM                │
-└─────────────────────┬────────────────────────┘
-                      │ AnaliseIAOutput (Pydantic)
-┌─────────────────────▼────────────────────────┐
-│  Camada de Domínio  (app/domain/schemas.py)  │  Pydantic v2 — contratos puros
-└──────────────────────────────────────────────┘
-```
+| Campo de Saída            | Descrição                                                         |
+|---------------------------|-------------------------------------------------------------------|
+| `identified_components`   | Componentes de infraestrutura identificados no diagrama           |
+| `architectural_risks`     | Vulnerabilidades, pontos de falha e riscos de segurança detectados |
+| `recommendations`         | Ações corretivas e melhorias propostas                            |
 
-### Decisões de Design
-
-| Decisão | Justificativa |
-|---|---|
-| **FastAPI** | Performance ASGI, validação automática via Pydantic, OpenAPI/Swagger gerado |
-| **Clean Architecture** | Regras de negócio isoladas da camada HTTP e do provedor de IA |
-| **"Cérebro de IA" isolado** | Toda a interação com o LLM fica em um único ponto (infrastructure), permitindo troca de provedor sem alterar Use Cases ou rotas |
-| **Instructor + Pydantic v2** | Força o LLM a retornar JSON estruturado; rejeita automaticamente respostas malformadas |
-| **`ConfigDict(frozen=True)`** | O schema de saída é imutável após criação, garantindo integridade dos dados no pipeline |
+O output é **determinístico, validado por Pydantic e consumível diretamente por outros sistemas** — eliminando respostas em linguagem natural não estruturada.
 
 ---
 
-## 3. Fluxo da Solução
+## 2. Arquitetura
+
+O projeto segue os princípios da **Clean Architecture**, com dependências fluindo sempre de fora para dentro:
 
 ```
-Cliente (HTTP POST)
-       │
-       │  { "imagem_base64": "<base64>", "url": "<opcional>" }
-       ▼
-┌─────────────────┐
-│  FastAPI Route  │  Valida payload via DiagramaInput (Pydantic)
-│  POST /analyze- │  Rejeita com HTTP 422 se imagem_base64 ausente
-│  diagram        │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  AnalisarDiagrama   │  Use Case: orquestra sem conhecer HTTP nem LLM
-│  UseCase.execute()  │
-└────────┬────────────┘
-         │
-         ▼
-┌───────────────────────────────┐
-│  Gemini Vision API            │  Recebe imagem Base64 + prompt estruturado
-│  google-generativeai          │  Processa visão computacional no diagrama
-└────────┬──────────────────────┘
-         │  Resposta raw do LLM
-         ▼
-┌───────────────────────────────┐
-│  Instructor (Structured Output│  Mapeia a resposta para AnaliseIAOutput
-│  + Pydantic v2 Validation)    │  Valida tipos, tamanhos e rejeita campos extras
-└────────┬──────────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│  HTTP 200       │  { "componentes_identificados": [...],
-│  JSON Response  │    "riscos_arquiteturais": [...],
-└─────────────────┘    "recomendacoes": [...] }
+┌──────────────────────────────────────────────────────┐
+│  Camada HTTP   app/api/routes.py                     │  FastAPI · APIRouter
+│  Valida o payload de entrada e trata exceções        │
+└────────────────────────┬─────────────────────────────┘
+                         │ DiagramInput (Pydantic)
+┌────────────────────────▼─────────────────────────────┐
+│  Caso de Uso   app/usecases/analyze_diagram.py       │  Python puro · sem framework
+│  Orquestra cliente de IA + persistência              │
+└──────────────┬──────────────────────┬────────────────┘
+               │                      │
+               ▼                      ▼
+┌──────────────────────┐  ┌───────────────────────────┐
+│  Cliente de IA       │  │  Repositório de Saída      │
+│  infrastructure/     │  │  infrastructure/           │
+│  ai_client.py        │  │  file_repository.py        │
+│  Gemini Vision API   │  │  Salva JSON em             │
+│  google-genai SDK    │  │  data/outputs/             │
+└──────────────┬───────┘  └───────────────────────────┘
+               │ AIAnalysisOutput (Pydantic)
+┌──────────────▼───────────────────────────────────────┐
+│  Domínio   app/domain/                               │
+│  schemas.py · repositories.py  (contratos puros)    │
+└──────────────────────────────────────────────────────┘
 ```
+
+### Padrão Repository
+
+O `AnalyzeDiagramUseCase` recebe um `OutputRepository` por injeção de dependência. A implementação concreta `FileOutputRepository` persiste cada análise como um arquivo JSON com timestamp UTC em `data/outputs/`:
+
+```
+data/outputs/
+└── analysis_20260425_160248_980144.json
+```
+
+Isso garante rastreabilidade completa de todas as análises realizadas, sem acoplamento entre o caso de uso e o mecanismo de armazenamento.
 
 ---
 
-## 4. Segurança
+## 3. Pipeline de IA e Resiliência
 
-### 4.1 Guardrails via Pydantic — Mitigação de Alucinações
+```
+Requisição HTTP
+      │
+      ▼
+GeminiClient.analyze_image()
+      │
+      ├─► Tenta: gemini-2.5-flash  ──► sucesso ──► retorna AIAnalysisOutput
+      │         │
+      │         └─► falha (429 / 500 / 503 / 504)
+      │                   │
+      └─► Fallback:  gemini-1.5-flash-8b  ──► sucesso ──► retorna AIAnalysisOutput
+                          │
+                          └─► falha ──► ServerError/ClientError propagado
+                                            │
+                                            ▼
+                                    HTTP 503 para o cliente
+```
 
-O schema `AnaliseIAOutput` age como uma **barreira de contrato** entre o LLM e o sistema. Qualquer resposta que não respeite o formato é rejeitada antes de chegar ao cliente:
+| Etapa               | Detalhe                                                                                                      |
+|---------------------|--------------------------------------------------------------------------------------------------------------|
+| **Modelo principal**| `gemini-2.5-flash` — melhor capacidade de visão computacional                                                |
+| **Modelo fallback** | `gemini-1.5-flash-8b` — econômico e resiliente, acionado nos códigos `429`, `500`, `503`, `504`             |
+| **Loop de autocorreção (re-ask)** | Se o output do LLM falhar nos guardrails do Pydantic, o erro de validação é reenviado ao modelo como instrução de correção. Até `_MAX_RETRIES = 2` tentativas por modelo. |
+| **Tratamento de erros HTTP** | `ServerError` e `ClientError` do SDK `google-genai` são capturados na rota e convertidos em `HTTPException` com código semântico (503 ou 500). |
+
+---
+
+## 4. Segurança e Guardrails
+
+### 4.1 Validação Semântica via Pydantic
+
+O schema `AIAnalysisOutput` age como uma **barreira de contrato** entre o LLM e o sistema:
 
 ```python
-class AnaliseIAOutput(BaseModel):
-    model_config = ConfigDict(frozen=True)           # imutabilidade pós-criação
+class AIAnalysisOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)           # imutável após criação
 
-    componentes_identificados: list[str]
-    riscos_arquiteturais: list[Annotated[str, Field(max_length=300)]]  # limite de tamanho
-    recomendacoes: list[str]
+    identified_components: list[str]
+    architectural_risks: list[Annotated[str, Field(max_length=300)]]
+    recommendations: list[str]
 ```
 
-- **Tipo obrigatório `list[str]`**: o LLM não pode devolver texto livre como string única ou objeto aninhado inesperado.
-- **`max_length=300` em `riscos_arquiteturais`**: impede que o modelo "alucine" parágrafos inteiros disfarçados de riscos, limitando cada item a uma afirmação objetiva.
-- **`frozen=True`**: o objeto de saída não pode ser mutado após validação, protegendo contra modificações acidentais ou maliciosas em pipelines downstream.
-- **`str_strip_whitespace=True` na entrada**: remove espaços laterais do payload, prevenindo bypass de validação por whitespace invisible em `DiagramaInput`.
+Dois `@field_validator` aplicam regras semânticas:
 
-### 4.2 Tratamento de Entradas Não Confiáveis e Controle de Escopo do LLM
+| Guardrail                    | Regra                                                                                           | Exemplo de rejeição          |
+|------------------------------|-------------------------------------------------------------------------------------------------|------------------------------|
+| `risks_must_be_descriptive`  | Cada risco deve ter **mínimo de 10 palavras** — evita respostas vagas/alucinadas                | `"Security risk."` ❌        |
+| `components_must_be_technical` | Nomes genéricos de formas visuais (`box`, `arrow`, `shape`) são rejeitados                   | `["box", "arrow"]` ❌        |
 
-| Vetor de Risco | Controle Implementado |
-|---|---|
-| Payload sem `imagem_base64` | FastAPI retorna HTTP 422 automaticamente (validação Pydantic na entrada) |
-| URL arbitrária enviada pelo cliente | Campo `url` é `Optional` e não é executado diretamente; a infraestrutura decide como consumi-lo |
-| Prompt injection via conteúdo da imagem | O prompt enviado ao Gemini é **fixo e controlado pelo sistema**; o conteúdo da imagem é tratado como dado visual, não como instrução |
-| Resposta do LLM fora do schema | Instructor rejeita e lança exceção antes de qualquer serialização |
-| Campos extras injetados pelo LLM | `model_config` padrão do Pydantic v2 ignora campos extras não declarados no schema |
+### 4.2 Controles de Segurança Gerais
 
-### 4.3 Tratamento de Falhas da IA (Fallback / Retry)
-
-O design da arquitetura suporta as seguintes estratégias de resiliência, a serem implementadas na camada de infrastructure ao integrar o cliente Gemini real:
-
-1. **Retry com backoff exponencial**: Instructor suporta configuração de `max_retries`, reenviando o prompt automaticamente caso o LLM retorne JSON inválido.
-2. **Timeout controlado**: o cliente `google-generativeai` aceita timeout por chamada; valores excedidos resultam em exceção propagada como HTTP 504.
-3. **Fallback à resposta vazia estruturada**: em caso de falha irrecuperável, o Use Case pode retornar `AnaliseIAOutput` com listas vazias ao invés de propagar erro 500, preservando o contrato de dados.
-4. **Isolamento de falha**: como o cliente de IA é injetado no `AnalisarDiagramaUseCase`, substituí-lo por um mock em testes ou por um provedor alternativo (ex.: OpenAI GPT-4o Vision) não altera nenhuma camada superior.
+| Vetor de Risco                          | Controle Implementado                                                                  |
+|-----------------------------------------|----------------------------------------------------------------------------------------|
+| Payload sem `image_base64`              | FastAPI retorna HTTP 422 automaticamente via validação Pydantic da entrada             |
+| Prompt injection via conteúdo da imagem | O prompt enviado ao Gemini é **fixo e controlado pelo sistema** — não interpolado      |
+| Resposta do LLM fora do schema          | `AIAnalysisOutput.model_validate_json()` rejeita e dispara o loop de autocorreção     |
+| Campos extras injetados pelo LLM        | Pydantic v2 ignora campos extras não declarados no schema por padrão                  |
+| Chave de API ausente                    | `GeminiClient.__init__` levanta `ValueError` → rota converte em HTTP 500 descritivo   |
+| `frozen=True` no schema de saída        | O objeto de análise não pode ser mutado após validação                                 |
 
 ---
 
-## 5. Instruções de Execução
+## 5. Guia Rápido de Execução
 
 ### Pré-requisitos
 
 - Python 3.11+
-- Chave de API do Google Gemini (`GOOGLE_API_KEY`)
+- Chave de API do Google Gemini (`GEMINI_API_KEY`)
 
 ### Instalação
 
@@ -158,94 +150,95 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### Variáveis de Ambiente
+### Configuração do `.env`
 
-```bash
-# Obrigatória para integração real com Gemini Vision
-GOOGLE_API_KEY=<sua-chave-aqui>
+Crie um arquivo `.env` na raiz do projeto:
+
+```env
+GEMINI_API_KEY=sua_chave_aqui
 ```
 
-### Executar o Servidor
+> A chave é carregada pelo `python-dotenv` em `app/main.py` antes de qualquer módulo ser importado.
+
+### Iniciar o Servidor
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-A documentação interativa estará disponível em:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-### Executar os Testes
-
-```bash
-# Suite completa com output detalhado
-pytest -v
-
-# Com cobertura de código
-pytest -v --tb=short
-```
-
-### Exemplo de Requisição
-
-```bash
-curl -X POST http://localhost:8000/analyze-diagram \
-  -H "Content-Type: application/json" \
-  -d '{
-    "imagem_base64": "<imagem-codificada-em-base64>",
-    "url": "https://example.com/diagrama.png"
-  }'
-```
-
-**Resposta esperada (HTTP 200):**
-
-```json
-{
-  "componentes_identificados": ["Load Balancer", "API Gateway", "..."],
-  "riscos_arquiteturais": ["Single point of failure no API Gateway..."],
-  "recomendacoes": ["Configurar redundância ativa no API Gateway..."]
-}
-```
+Documentação interativa disponível em:
+- **Swagger UI:** `http://localhost:8000/docs`
+- **ReDoc:** `http://localhost:8000/redoc`
 
 ---
 
-## 6. Metodologia de Engenharia
+## 6. Testes
 
-### TDD como Garantia do Contrato de Dados
+### Executar a Suíte Completa
 
-Este projeto adota **Test-Driven Development (TDD)** como metodologia central de qualidade. Os testes não validam apenas o comportamento — eles **especificam e protegem o contrato de dados** que é o coração do sistema.
-
-```
-tests/
-├── conftest.py          # Fixtures de sessão (TestClient reutilizável)
-├── test_routes.py       # Testes de integração: contrato HTTP e schema de resposta
-└── test_usecases.py     # Testes unitários: lógica do Use Case isolada do framework
+```bash
+# Todos os testes (pula o teste de integração real se não houver chave)
+python -m pytest tests/ -v
 ```
 
-#### Cobertura de Cenários
+### Executar apenas testes unitários (sem chamada real à API)
 
-| Teste | Tipo | O que garante |
-|---|---|---|
-| `test_analyze_diagram_retorna_200_e_schema_correto` | Integração | HTTP 200 + presença das 3 chaves do contrato |
-| `test_analyze_diagram_campos_sao_listas` | Integração | Tipos dos campos de saída (nunca string, sempre lista) |
-| `test_analyze_diagram_sem_imagem_base64_retorna_422` | Integração | Rejeição de payload inválido na fronteira HTTP |
-| `test_analyze_diagram_aceita_url_opcional` | Integração | Campo opcional não quebra o pipeline |
-| `test_analisar_diagrama_usecase_retorna_output_esperado` | Unitário | Use Case retorna `AnaliseIAOutput` válido + `max_length` respeitado |
+```bash
+python -m pytest tests/ -v -k "not usecase_returns_expected"
+```
 
-#### Princípio Aplicado
+### Cobertura de Testes
 
-> Os testes foram escritos **antes da implementação** do use case e da rota, garantindo que o design da API seja guiado pela necessidade do consumidor — não pelo que é conveniente implementar. Qualquer regressão no contrato de dados é detectada imediatamente na pipeline de CI.
+| Teste                                              | Tipo        | O que garante                                                    |
+|----------------------------------------------------|-------------|------------------------------------------------------------------|
+| `test_analyze_diagram_returns_200_and_correct_schema` | Integração | HTTP 200 + presença das 3 chaves do contrato                  |
+| `test_analyze_diagram_fields_are_lists`            | Integração  | Tipos dos campos de saída (sempre `list`, nunca `str`)          |
+| `test_analyze_diagram_missing_image_base64_returns_422` | Integração | Rejeição de payload inválido na fronteira HTTP               |
+| `test_analyze_diagram_accepts_optional_url`        | Integração  | Campo `url` opcional não quebra o pipeline                      |
+| `test_analyze_diagram_returns_503_when_ai_unavailable` | Integração | ServerError da API → HTTP 503 semântico para o cliente      |
+| `test_usecase_calls_repository_save`               | Unitário    | `repository.save()` é chamado exatamente uma vez com o resultado|
+| `test_file_repository_saves_json`                  | Unitário    | `FileOutputRepository` cria arquivo JSON no diretório correto   |
+| `test_aianalysisoutput_rejects_vague_risk`         | Guardrail   | Risco com < 10 palavras dispara `ValidationError`               |
+| `test_aianalysisoutput_rejects_generic_component`  | Guardrail   | Componente genérico (`box`, `arrow`) dispara `ValidationError`  |
+| `test_gemini_client_falls_back_on_retriable_error` | Resiliência | Fallback automático de `gemini-2.5-flash` para `gemini-1.5-flash-8b` em erros 503 |
+| `test_analyze_diagram_usecase_returns_expected_output` | Integração real | Chamada real ao Gemini + guardrails aplicados *(requer `GEMINI_API_KEY`)* |
 
 ---
 
-## Stack de Tecnologias
+## 7. Simulador SOAT
 
-| Tecnologia | Versão mínima | Papel |
-|---|---|---|
-| `fastapi[standard]` | 0.115.0 | Framework HTTP ASGI |
-| `uvicorn[standard]` | 0.29.0 | Servidor ASGI de produção |
-| `pydantic` | 2.7.0 | Validação de dados e contratos de schema |
-| `instructor` | 1.3.0 | Structured outputs com LLMs (Gemini/OpenAI) |
-| `google-generativeai` | 0.7.0 | Cliente oficial da API Gemini Vision |
-| `pytest` | 8.2.0 | Framework de testes |
-| `pytest-asyncio` | 0.23.0 | Suporte a testes assíncronos |
-| `httpx` | 0.27.0 | Cliente HTTP para TestClient do FastAPI |
+O `simulador_soat.py` simula o cliente externo da equipe SOAT consumindo a API de ponta a ponta.
+
+### Pré-requisito
+
+Servidor rodando em `http://localhost:8000` (ver seção 5).
+
+### Executar com o diagrama padrão (`architecture.png`)
+
+```bash
+python simulador_soat.py
+```
+
+### Executar com uma imagem customizada
+
+```bash
+python simulador_soat.py caminho/para/diagrama.png
+```
+
+O simulador imprime o resultado completo formatado no terminal e exibe um resumo com a contagem de componentes, riscos e recomendações identificados.
+
+---
+
+## 8. Stack de Tecnologias
+
+| Tecnologia          | Versão mínima | Papel                                                    |
+|---------------------|---------------|----------------------------------------------------------|
+| `fastapi[standard]` | 0.115.0       | Framework HTTP ASGI com validação automática             |
+| `uvicorn[standard]` | 0.29.0        | Servidor ASGI                                            |
+| `pydantic`          | 2.7.0         | Validação de dados, guardrails semânticos e contratos    |
+| `google-genai`      | 0.8.0         | SDK nativo do Google Gemini (structured outputs nativos) |
+| `python-dotenv`     | 1.0.0         | Carregamento do `.env` com `GEMINI_API_KEY`              |
+| `httpx`             | 0.27.0        | Cliente HTTP assíncrono (simulador SOAT + testes)        |
+| `pytest`            | 8.2.0         | Framework de testes                                      |
+| `pytest-asyncio`    | 0.23.0        | Suporte a testes assíncronos (`asyncio: mode=auto`)      |
+

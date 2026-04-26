@@ -8,12 +8,16 @@ load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de am
 from app.api.routes import router  # noqa: E402
 
 app = FastAPI(
-    title="IADT — AI Processing Microservice",
+    title="IADT - FIAP Secure Systems",
     description=(
-        "Receives an architecture diagram (base64 or URL), "
-        "processes it via Gemini Vision and returns structured analysis in JSON."
+        "API especializada na análise arquitetural de diagramas na nuvem, "
+        "utilizando Gemini Vision com mitigação de alucinações (Guardrails) "
+        "e Fallback automático."
     ),
-    version="0.1.0",
+    version="1.0.0",
+    contact={
+        "name": "Equipe de Arquitetura",
+    },
 )
 
 app.include_router(router)
