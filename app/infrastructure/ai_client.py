@@ -1,113 +1,137 @@
 from __future__ import annotations
-
 import base64
 import os
-
+from typing import Literal
+import litellm
 from dotenv import load_dotenv
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types
-from pydantic import ValidationError
+from app.core.logging import get_logger
+from app.domain.schemas import AIAnalysisOutput, SecurityAnalysisOutput
 
-from app.domain.schemas import AIAnalysisOutput
+load_dotenv()
+log = get_logger(__name__)
 
-load_dotenv()  # rede de segurança: garante que o .env seja carregado independentemente do ponto de entrada
+_SYSTEM_PROMPT = """## ROLE
+You are a Senior Software Architect and Cloud Infrastructure Auditor. Your task is to perform a rigorous structural and security audit of the provided architecture diagram.
 
-_SYSTEM_PROMPT = (
-    "You are a Senior Software Architect and Architecture Auditor. "
-    "Analyze the architecture diagram provided in the image and extract:\n"
-    "1. **identified_components** — list of all components, "
-    "services, and resources visible in the diagram.\n"
-    "2. **architectural_risks** — list of risks, resilience failures, "
-    "single points of failure, and security issues identified "
-    "(each item with a maximum of 300 characters).\n"
-    "3. **recommendations** — list of concrete actions to mitigate "
-    "the identified risks.\n"
-    "Respond EXCLUSIVELY in the requested JSON format."
-)
+## TASK
+1. VISUAL CATALOGING: Identify every node, service, database, and networking boundary explicitly labeled or iconographically recognizable.
+2. RISK ANALYSIS: Identify Single Points of Failure (SPOF), security vulnerabilities (e.g., exposed databases), resilience gaps, and scalability bottlenecks.
+3. MITIGATION: Provide actionable recommendations based on Well-Architected Frameworks.
 
-_PRIMARY_MODEL = "gemini-2.5-flash"
-_FALLBACK_MODEL = "gemini-1.5-flash-8b"
-# Códigos HTTP que acionam o fallback automático de modelo (sobrecarga, erro de servidor, rate limit, timeout).
-_FALLBACK_ON_CODES = frozenset({429, 500, 503, 504})
-_MAX_RETRIES = 2
+## CONSTRAINTS
+- Output MUST be a valid JSON object.
+- Be precise: Reference specific component names in your risk analysis.
+- If an element is blurry or its function is unclear, list it under "uncertainties" rather than guessing.
+- Keep descriptions concise, technical, and objective.
 
+## OUTPUT FORMAT
+{
+  "identified_components": [
+    {
+      "id": "c1",
+      "name": "Component Name",
+      "type": "Service/Resource Type",
+      "function": "Brief technical purpose"
+    }
+  ],
+  "architectural_risks": [
+    {
+      "risk": "Technical title",
+      "severity": "Critical/High/Medium/Low",
+      "impact": "What happens if this fails (concise)",
+      "affected_components": ["c1"]
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "Concrete mitigation step",
+      "mitigates_risk": "Reference the risk title"
+    }
+  ],
+  "uncertainties": ["List any ambiguous or unidentifiable elements"]
+}
+"""
 
-class GeminiClient:
-    """Encapsula a chamada à Gemini Vision via google-genai com saídas estruturadas nativas."""
+_SECURITY_SYSTEM_PROMPT = """## ROLE
+You are a Senior Security Analyst. Your task is to perform a security audit of the provided architecture diagram.
 
-    def __init__(self, model_name: str = _PRIMARY_MODEL) -> None:
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
-            raise ValueError(
-                "The GEMINI_API_KEY environment variable is not set. "
-                "Add it to your .env file or export it before running."
-            )
-        self._model_name = model_name
-        self._client = genai.Client(api_key=api_key)
+## TASK
+1. Analyze the provided architecture diagram for security vulnerabilities.
+2. Provide a list of security recommendations as bullet points.
 
-    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
-        """Envia a imagem (base64) ao Gemini Vision e retorna a análise estruturada.
+## CONSTRAINTS
+- Output MUST be a valid JSON object.
+- Provide at least 3 security recommendations.
+- Each recommendation should be a clear and actionable bullet point.
 
-        Tenta até _MAX_RETRIES vezes quando a validação Pydantic falha para que o
-        modelo possa se autocorrigir. Faz fallback automático para _FALLBACK_MODEL
-        quando o modelo principal retorna erro retriável (429, 500, 503, 504).
-        """
-        image_bytes = base64.b64decode(base64_str)
+## OUTPUT FORMAT
+{
+  "security_recommendations": [
+    "Bullet point 1",
+    "Bullet point 2",
+    "Bullet point 3"
+  ]
+}
+"""
 
-        contents = [
-            types.Part.from_text(text=_SYSTEM_PROMPT),
-            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+SUPPORTED_MODELS = {
+    "gemini": "gemini/gemini-1.5-flash",
+    "bedrock": "bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
+}
+
+class AIClient:
+    """Cliente agnóstico de provedor de IA, usando LiteLLM para análise de imagens."""
+
+    def __init__(self, model_id: Literal["gemini", "bedrock"] = "gemini") -> None:
+        self.model_name = SUPPORTED_MODELS.get(model_id)
+        if not self.model_name:
+            raise ValueError(f"Modelo '{model_id}' não é suportado.")
+
+        if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
+            raise ValueError("A variável de ambiente GEMINI_API_KEY não foi definida.")
+        if "bedrock" in self.model_name and not (
+            os.environ.get("AWS_ACCESS_KEY_ID") and
+            os.environ.get("AWS_SECRET_ACCESS_KEY") and
+            os.environ.get("AWS_REGION_NAME")
+        ):
+            raise ValueError("As variáveis de ambiente da AWS para o Bedrock não foram definidas.")
+
+    async def _analyze(self, base64_str: str, system_prompt: str, output_schema: BaseModel) -> BaseModel:
+        """Envia a imagem para o modelo de IA e retorna a análise estruturada."""
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": system_prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_str}"
+                        },
+                    },
+                ],
+            }
         ]
 
-        for model in (self._model_name, _FALLBACK_MODEL):
-            print(f"--- CHAMANDO GEMINI API ({model}) ---")  # noqa: T201
-            try:
-                return self._call_with_guardrail_retries(model, contents)
-            except (genai_errors.ServerError, genai_errors.ClientError) as exc:
-                if exc.code in _FALLBACK_ON_CODES and model != _FALLBACK_MODEL:
-                    print(  # noqa: T201
-                        f"--- {model} falhou (HTTP {exc.code}), "
-                        f"usando modelo fallback {_FALLBACK_MODEL} ---"
-                    )
-                    continue
-                raise
-
-        raise RuntimeError("All models unavailable")  # inalcançável, mas necessário para satisfazer o verificador de tipos
-
-    def _call_with_guardrail_retries(
-        self, model: str, contents: list[types.Part]
-    ) -> AIAnalysisOutput:
-        """Chama o modelo e tenta novamente até _MAX_RETRIES vezes quando a validação Pydantic falha."""
-        last_error: Exception | None = None
-        retry_contents = list(contents)
-
-        for attempt in range(1, _MAX_RETRIES + 2):  # +2 = 1 tentativa inicial + número de retentativas
-            response = self._client.models.generate_content(
-                model=model,
-                contents=retry_contents,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=AIAnalysisOutput,
-                ),
+        try:
+            log.info(f"Chamando API via LiteLLM com o modelo: {self.model_name}")
+            response = await litellm.acompletion(
+                model=self.model_name,
+                messages=messages,
+                response_format={"type": "json_object"},
             )
-            try:
-                return AIAnalysisOutput.model_validate_json(response.text)
-            except ValidationError as exc:
-                last_error = exc
-                if attempt <= _MAX_RETRIES:
-                    print(  # noqa: T201
-                        f"--- GUARDRAIL FALHOU (tentativa {attempt}) — "
-                        f"reenviando ao modelo ---"
-                    )
-                    retry_contents.append(
-                        types.Part.from_text(
-                            text=(
-                                f"Your previous response failed validation: {exc}. "
-                                "Please fix the issues and respond again in the "
-                                "exact JSON format requested."
-                            )
-                        )
-                    )
+            
+            response_content = response.choices[0].message.content
+            
+            return output_schema.model_validate_json(response_content)
 
-        raise last_error  # type: ignore[misc]
+        except Exception as e:
+            log.error(f"Erro na chamada LiteLLM: {e}", exc_info=True)
+            raise
+
+    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
+        return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)
+
+    async def analyze_security(self, base64_str: str) -> SecurityAnalysisOutput:
+        return await self._analyze(base64_str, _SECURITY_SYSTEM_PROMPT, SecurityAnalysisOutput)

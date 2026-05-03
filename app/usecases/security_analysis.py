@@ -1,22 +1,20 @@
 from __future__ import annotations
-import asyncio
 from app.domain.repositories import OutputRepository
-from app.domain.schemas import AIAnalysisOutput, DiagramInput
+from app.domain.schemas import SecurityAnalysisOutput, DiagramInput
 from app.infrastructure.ai_client import AIClient
-from app.infrastructure.pdf_processor import process_pdf_and_encode_images
 import base64
+from app.infrastructure.pdf_processor import process_pdf_and_encode_images
 
-class AnalyzeDiagramUseCase:
-    """Orquestra a análise de um diagrama arquitetural via IA.
-    """
+class SecurityAnalysisUseCase:
+    """Orquestra a análise de segurança de um diagrama arquitetural via IA."""
 
     def __init__(self, ai_client: AIClient, repository: OutputRepository) -> None:
         self._ai_client = ai_client
         self._repository = repository
 
-    async def execute(self, input_data: DiagramInput) -> AIAnalysisOutput:
+    async def execute(self, input_data: DiagramInput) -> SecurityAnalysisOutput:
         """
-        Processa o arquivo (imagem ou PDF), envia para análise e salva o resultado.
+        Processa o arquivo (imagem ou PDF), envia para análise de segurança e salva o resultado.
         """
         if input_data.file_path.endswith(".pdf"):
             pdf_content = base64.b64decode(input_data.image_base64)
@@ -32,8 +30,7 @@ class AnalyzeDiagramUseCase:
         else:
             image_base64 = input_data.image_base64
 
-        await asyncio.sleep(5)
-
-        result = await self._ai_client.analyze_image(image_base64)
-        await self._repository.save(result)
+        result = await self._ai_client.analyze_security(image_base64)
+        # O repositório pode precisar ser adaptado para salvar diferentes tipos de output
+        # await self._repository.save(result) 
         return result

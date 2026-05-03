@@ -1,73 +1,84 @@
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Termos genéricos e não-técnicos que indicam que o LLM descreveu formas visuais
-# do diagrama em vez dos componentes arquiteturais reais.
 _GENERIC_COMPONENT_TERMS: frozenset[str] = frozenset(
     {
         "box", "arrow", "shape", "element", "item", "object", "figure",
         "line", "circle", "rectangle", "square", "triangle", "oval",
-        # Variantes em português (proteção contra respostas mistas de idioma)
         "caixa", "seta", "forma", "elemento", "item", "objeto",
     }
 )
-
-_MIN_RISK_WORDS = 10
+_MIN_RISK_WORDS = 5
+_SEVERITY_LEVELS = {"Critical", "High", "Medium", "Low"}
 
 
 class DiagramInput(BaseModel):
-    """Payload de entrada para o endpoint de análise de diagramas."""
-
+    """Payload de entrada para análise, suportando múltiplos tipos e modelos."""
     model_config = ConfigDict(str_strip_whitespace=True)
 
     image_base64: str
-    url: Optional[str] = None
+    file_path: str
+    model_type: Literal["gemini", "bedrock"] = "gemini"
+
+
+class TaskStatus(BaseModel):
+    """Representa o status de uma tarefa assíncrona."""
+    task_id: str
+    status: Literal["processing", "completed", "failed"]
+    error: Optional[str] = None
+
+
+class IdentifiedComponent(BaseModel):
+    id: str
+    name: str
+    type: str
+    function: str
+
+    @field_validator("name")
+    @classmethod
+    def components_must_be_technical(cls, name: str) -> str:
+        """Componentes não devem ser nomes genéricos de formas."""
+        if name.strip().lower() in _GENERIC_COMPONENT_TERMS:
+            raise ValueError(
+                f"Nome de componente '{name}' é genérico demais. "
+                "Use termos técnicos específicos (ex: 'API Gateway', 'PostgreSQL')."
+            )
+        return name
+
+class ArchitecturalRisk(BaseModel):
+    risk: str
+    severity: Literal["Critical", "High", "Medium", "Low"]
+    impact: str
+    affected_components: list[str]
+
+    @field_validator("risk")
+    @classmethod
+    def risks_must_be_descriptive(cls, risk: str) -> str:
+        """O título do risco deve ser minimamente descritivo."""
+        if len(risk.split()) < _MIN_RISK_WORDS:
+            raise ValueError(
+                f"O risco '{risk}' é muito vago. Deve ter pelo menos {_MIN_RISK_WORDS} palavras."
+            )
+        return risk
+
+class Recommendation(BaseModel):
+    action: str
+    mitigates_risk: str
 
 
 class AIAnalysisOutput(BaseModel):
-    """Esquema de saída estruturada exigido do LLM via Gemini Vision."""
-
+    """Esquema de saída estruturada para a análise da arquitetura."""
     model_config = ConfigDict(frozen=True)
 
-    identified_components: list[str]
-    architectural_risks: list[Annotated[str, Field(max_length=300)]]
-    recommendations: list[str]
+    identified_components: list[IdentifiedComponent]
+    architectural_risks: list[ArchitecturalRisk]
+    recommendations: list[Recommendation]
+    uncertainties: list[str] = []
 
-    @field_validator("architectural_risks", mode="before")
-    @classmethod
-    def risks_must_be_descriptive(cls, risks: list) -> list:
-        """Guardrail: cada risco deve conter pelo menos 10 palavras.
 
-        Entradas curtas como 'Security risk' ou 'Performance issue' são vagas
-        demais para serem acionáveis e provavelmente indicam respostas alucinadas.
-        """
-        for risk in risks:
-            word_count = len(str(risk).split())
-            if word_count < _MIN_RISK_WORDS:
-                raise ValueError(
-                    f"Architectural risk is too vague ({word_count} words). "
-                    f"Each risk must have at least {_MIN_RISK_WORDS} words "
-                    f"to be considered actionable. Got: {risk!r}"
-                )
-        return risks
-
-    @field_validator("identified_components", mode="before")
-    @classmethod
-    def components_must_be_technical(cls, components: list) -> list:
-        """Guardrail: componentes identificados não devem ser nomes genéricos de formas.
-
-        Termos como 'box' ou 'arrow' indicam que o LLM descreveu os elementos visuais
-        do diagrama em vez dos componentes arquiteturais reais.
-        """
-        for component in components:
-            normalized = str(component).strip().lower()
-            if normalized in _GENERIC_COMPONENT_TERMS:
-                raise ValueError(
-                    f"Component name {component!r} is too generic. "
-                    "Use specific technical terms (e.g. 'API Gateway', "
-                    "'Load Balancer', 'PostgreSQL Database')."
-                )
-        return components
+class SecurityAnalysisOutput(BaseModel):
+    """Esquema de saída para a análise de segurança."""
+    security_recommendations: list[str]
