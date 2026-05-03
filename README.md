@@ -229,7 +229,66 @@ Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
 
 ---
 
-## 8. Tudo pronto! Bora usar o sistema
+## 9. Uso como MCP Server (VS Code / Claude Desktop)
+
+Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs como o Claude (no Desktop ou via extensões no VS Code) utilizem as ferramentas de análise de diagrama diretamente.
+
+### 9.1 Configuração no VS Code (extensão Cline / Roo Code)
+
+Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, adicione o servidor MCP nas configurações da extensão:
+
+```json
+{
+  "mcpServers": {
+    "diagram-analyzer": {
+      "command": "python",
+      "args": ["-m", "app.mcp.server"],
+      "cwd": "/caminho/para/o/projeto/HackatonIADT",
+      "env": {
+        "GEMINI_API_KEY": "sua-chave",
+        "AWS_ACCESS_KEY_ID": "sua-chave",
+        "AWS_SECRET_ACCESS_KEY": "sua-chave",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}
+```
+
+### 9.2 Configuração no Claude Desktop
+
+Para usar com o aplicativo Claude Desktop, adicione o seguinte ao seu arquivo `claude_desktop_config.json`:
+
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "diagram-analyzer": {
+      "command": "python",
+      "args": ["-m", "app.mcp.server"],
+      "cwd": "C:\\caminho\\para\\o\\projeto\\HackatonIADT",
+      "env": {
+        "GEMINI_API_KEY": "sua-chave",
+        "AWS_ACCESS_KEY_ID": "sua-chave",
+        "AWS_SECRET_ACCESS_KEY": "sua-chave",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}
+```
+
+### 9.3 Ferramentas Disponíveis
+
+Uma vez configurado, a IA terá acesso às seguintes ferramentas:
+- `analyze_diagram`: Analisa componentes e riscos de um arquivo local ou base64.
+- `analyze_security`: Foca especificamente em vulnerabilidades de segurança.
+
+---
+
+## 10. Tudo pronto! Bora usar o sistema
 
 O sistema está pronto para análise de diagramas arquiteturais!
 
