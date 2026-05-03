@@ -1,17 +1,17 @@
 """MCP Server para análise de diagramas arquiteturais.
 
-Expõe as capacidades do sistema como ferramentas MCP (Model Context Protocol),
-permitindo que qualquer cliente MCP (como Claude Code) analise diagramas de
-arquitetura e realize análises de segurança.
+Este servidor atua como um cliente para a API do IADT, permitindo que ferramentas
+MCP realizem análises sem necessidade de chaves de API locais.
 """
 
 from __future__ import annotations
 
 import base64
 import json
-import sys
+import os
 from typing import Any
 
+import httpx
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 from mcp.types import (
@@ -19,18 +19,12 @@ from mcp.types import (
     Tool,
 )
 
-from app.domain.schemas import DiagramInput
-from app.infrastructure.ai_client import AIClient
-from app.infrastructure.file_repository import FileOutputRepository
-from app.infrastructure.pdf_processor import process_pdf_and_encode_images
-from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
-from app.usecases.security_analysis import SecurityAnalysisUseCase
+# Configuração da API
+API_BASE_URL = os.getenv("IADT_API_URL", "http://localhost:8000")
 
 
 def _serialize(output: Any) -> str:
-    """Serializa um objeto Pydantic ou qualquer outro para JSON."""
-    if hasattr(output, "model_dump"):
-        return json.dumps(output.model_dump(), indent=2, ensure_ascii=False)
+    """Serializa um objeto para JSON."""
     return json.dumps(output, indent=2, ensure_ascii=False)
 
 
@@ -49,10 +43,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="analyze_diagram",
             description="""Analisa um diagrama arquitetural (imagem ou PDF) e retorna
-            componentes identificados, riscos arquiteturais e recomendações.
-
-            Forneça o caminho do arquivo ou o conteúdo base64 da imagem.
-            Para PDFs, o texto e a primeira imagem são extraídos automaticamente.""",
+            componentes identificados, riscos arquiteturais e recomendações.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -74,9 +65,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="analyze_security",
             description="""Realiza uma análise de segurança de um diagrama arquitetural
-            (imagem ou PDF), identificando vulnerabilidades e recomendações de segurança.
-
-            Forneça o caminho do arquivo ou o conteúdo base64 da imagem.""",
+            (imagem ou PDF), identificando vulnerabilidades e recomendações.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -98,58 +87,37 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-def _build_input(file_path: str | None, image_base64: str | None) -> DiagramInput:
-    """Constrói DiagramInput a partir dos argumentos, tratando PDF se necessário."""
-    b64: str | None = image_base64
-    resolved_path: str | None = file_path
-
-    if file_path and not image_base64:
-        b64 = _read_file_as_base64(file_path)
-        resolved_path = file_path
-
-    if not b64:
-        raise ValueError("É necessário fornecer 'file_path' ou 'image_base64'.")
-
-    # model_type será definido pelo AIClient usando seu valor padrão
-    return DiagramInput(image_base64=b64, file_path=resolved_path)  # type: ignore[arg-type]
-
-
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         if name == "analyze_diagram":
-            return await _handle_analyze_diagram(arguments)
+            return await _call_api("/analyze/diagram/sync", arguments)
         elif name == "analyze_security":
-            return await _handle_analyze_security(arguments)
+            return await _call_api("/analyze/security/sync", arguments)
         else:
             raise ValueError(f"Ferramenta desconhecida: {name}")
     except Exception as exc:
-        return [TextContent(type="text", text=f"Erro: {exc}")]
+        return [TextContent(type="text", text=f"Erro ao chamar API: {exc}")]
 
 
-async def _handle_analyze_diagram(arguments: dict) -> list[TextContent]:
+async def _call_api(endpoint: str, arguments: dict) -> list[TextContent]:
     file_path = arguments.get("file_path")
     image_base64 = arguments.get("image_base64")
 
-    input_data = _build_input(file_path, image_base64)
-    client = AIClient()  # Use default model from settings
-    repo = FileOutputRepository()
-    use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
+    if file_path and not image_base64:
+        image_base64 = await _read_file_as_base64(file_path)
 
-    result = await use_case.execute(input_data)
-    return [TextContent(type="text", text=_serialize(result))]
+    payload = {
+        "image_base64": image_base64,
+        "file_path": file_path,
+        "model_type": "gemini"  # Valor padrão para a API
+    }
 
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(f"{API_BASE_URL}{endpoint}", json=payload)
+        response.raise_for_status()
+        result = response.json()
 
-async def _handle_analyze_security(arguments: dict) -> list[TextContent]:
-    file_path = arguments.get("file_path")
-    image_base64 = arguments.get("image_base64")
-
-    input_data = _build_input(file_path, image_base64)
-    client = AIClient()  # Use default model from settings
-    repo = FileOutputRepository()
-    use_case = SecurityAnalysisUseCase(ai_client=client, repository=repo)
-
-    result = await use_case.execute(input_data)
     return [TextContent(type="text", text=_serialize(result))]
 
 

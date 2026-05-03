@@ -245,10 +245,7 @@ Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, adicione 
       "args": ["-m", "app.mcp.server"],
       "cwd": "/caminho/para/o/projeto/HackatonIADT",
       "env": {
-        "GEMINI_API_KEY": "sua-chave",
-        "AWS_ACCESS_KEY_ID": "sua-chave",
-        "AWS_SECRET_ACCESS_KEY": "sua-chave",
-        "AWS_REGION": "us-east-1"
+        "IADT_API_URL": "http://localhost:8000"
       }
     }
   }
@@ -270,10 +267,7 @@ Para usar com o aplicativo Claude Desktop, adicione o seguinte ao seu arquivo `c
       "args": ["-m", "app.mcp.server"],
       "cwd": "C:\\caminho\\para\\o\\projeto\\HackatonIADT",
       "env": {
-        "GEMINI_API_KEY": "sua-chave",
-        "AWS_ACCESS_KEY_ID": "sua-chave",
-        "AWS_SECRET_ACCESS_KEY": "sua-chave",
-        "AWS_REGION": "us-east-1"
+        "IADT_API_URL": "http://localhost:8000"
       }
     }
   }
