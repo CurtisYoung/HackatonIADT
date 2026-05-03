@@ -1,11 +1,14 @@
 from __future__ import annotations
 import asyncio
+import json
 import uuid
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
+import redis
 
+from app.core.redis import get_redis_client
 from app.domain.schemas import AIAnalysisOutput, DiagramInput, TaskStatus, SecurityAnalysisOutput
 from app.infrastructure.ai_client import AIClient
 from app.infrastructure.file_repository import FileOutputRepository
@@ -14,9 +17,9 @@ from app.usecases.security_analysis import SecurityAnalysisUseCase
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 
-# ATENÇÃO: Armazenamento em memória. Em produção, use um sistema persistente
-# como Redis ou um banco de dados para gerenciar o estado das tarefas.
-tasks_db: dict[str, dict[str, Any]] = {}
+
+def _get_redis() -> redis.Redis:
+    return get_redis_client()
 
 
 def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
@@ -45,7 +48,7 @@ def _get_security_use_case(
     return SecurityAnalysisUseCase(ai_client=client, repository=repo)
 
 
-def _run_analysis_in_background(task_id: str, input_data: DiagramInput) -> None:
+def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
     """Função executada em background para não bloquear a resposta da API."""
     try:
         client = _get_ai_client(model_id=input_data.model_type)
@@ -53,10 +56,13 @@ def _run_analysis_in_background(task_id: str, input_data: DiagramInput) -> None:
         use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
 
         result = asyncio.run(use_case.execute(input_data))
-        tasks_db[task_id].update({"status": "completed", "result": result})
+        
+        task_data = {"status": "completed", "result": result.model_dump_json()}
+        redis_client.set(task_id, json.dumps(task_data))
 
     except Exception as e:
-        tasks_db[task_id].update({"status": "failed", "error": str(e)})
+        task_data = {"status": "failed", "error": str(e)}
+        redis_client.set(task_id, json.dumps(task_data))
 
 
 @router.post(
@@ -68,14 +74,16 @@ def _run_analysis_in_background(task_id: str, input_data: DiagramInput) -> None:
 async def analyze_diagram_async(
     input_data: DiagramInput,
     background_tasks: BackgroundTasks,
+    redis_client: redis.Redis = Depends(_get_redis),
 ) -> TaskStatus:
     """
     Recebe um diagrama, inicia a análise em background e retorna um ID de tarefa.
     """
     task_id = str(uuid.uuid4())
-    tasks_db[task_id] = {"status": "processing"}
+    task_data = {"status": "processing"}
+    redis_client.set(task_id, json.dumps(task_data))
 
-    background_tasks.add_task(_run_analysis_in_background, task_id, input_data)
+    background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
 
     return TaskStatus(task_id=task_id, status="processing")
 
@@ -85,11 +93,13 @@ async def analyze_diagram_async(
     response_model=TaskStatus,
     summary="Consulta o status de uma análise",
 )
-async def get_analysis_status(task_id: str) -> TaskStatus:
+async def get_analysis_status(task_id: str, redis_client: redis.Redis = Depends(_get_redis)) -> TaskStatus:
     """Verifica e retorna o status atual de uma tarefa de análise."""
-    task = tasks_db.get(task_id)
-    if not task:
+    task_data = redis_client.get(task_id)
+    if not task_data:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+    
+    task = json.loads(task_data)
     return TaskStatus(task_id=task_id, status=task["status"], error=task.get("error"))
 
 
@@ -98,17 +108,19 @@ async def get_analysis_status(task_id: str) -> TaskStatus:
     response_model=AIAnalysisOutput,
     summary="Obtém o resultado de uma análise concluída",
 )
-async def get_analysis_result(task_id: str) -> AIAnalysisOutput:
+async def get_analysis_result(task_id: str, redis_client: redis.Redis = Depends(_get_redis)) -> AIAnalysisOutput:
     """Retorna o resultado final de uma análise, se estiver concluída."""
-    task = tasks_db.get(task_id)
-    if not task:
+    task_data = redis_client.get(task_id)
+    if not task_data:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+
+    task = json.loads(task_data)
     if task["status"] != "completed":
         raise HTTPException(
             status_code=400,
             detail=f"A tarefa ainda não foi concluída (status: {task['status']}).",
         )
-    return task["result"]
+    return AIAnalysisOutput.model_validate_json(task["result"])
 
 
 @router.post(
