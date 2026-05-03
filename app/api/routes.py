@@ -14,6 +14,8 @@ from app.usecases.security_analysis import SecurityAnalysisUseCase
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 
+# ATENÇÃO: Armazenamento em memória. Em produção, use um sistema persistente
+# como Redis ou um banco de dados para gerenciar o estado das tarefas.
 tasks_db: dict[str, dict[str, Any]] = {}
 
 

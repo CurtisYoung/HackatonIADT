@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 _GENERIC_COMPONENT_TERMS: frozenset[str] = frozenset(
     {
@@ -12,7 +12,6 @@ _GENERIC_COMPONENT_TERMS: frozenset[str] = frozenset(
     }
 )
 _MIN_RISK_WORDS = 5
-_SEVERITY_LEVELS = {"Critical", "High", "Medium", "Low"}
 
 
 class DiagramInput(BaseModel):
