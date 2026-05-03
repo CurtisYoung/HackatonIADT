@@ -235,18 +235,13 @@ Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs c
 
 ### 9.1 Configuração no VS Code (extensão Cline / Roo Code)
 
-Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, adicione o servidor MCP nas configurações da extensão:
+Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, você pode conectar o servidor MCP diretamente via HTTP:
 
 ```json
 {
   "mcpServers": {
     "diagram-analyzer": {
-      "command": "python",
-      "args": ["-m", "app.mcp.server"],
-      "cwd": "/caminho/para/o/projeto/HackatonIADT",
-      "env": {
-        "IADT_API_URL": "http://localhost:8000"
-      }
+      "url": "http://localhost:8000/mcp"
     }
   }
 }
@@ -254,7 +249,7 @@ Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, adicione 
 
 ### 9.2 Configuração no Claude Desktop
 
-Para usar com o aplicativo Claude Desktop, adicione o seguinte ao seu arquivo `claude_desktop_config.json`:
+Para usar com o aplicativo Claude Desktop, a configuração também é feita via URL, sem necessidade de rodar scripts locais ou configurar segredos no cliente:
 
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -263,12 +258,7 @@ Para usar com o aplicativo Claude Desktop, adicione o seguinte ao seu arquivo `c
 {
   "mcpServers": {
     "diagram-analyzer": {
-      "command": "python",
-      "args": ["-m", "app.mcp.server"],
-      "cwd": "C:\\caminho\\para\\o\\projeto\\HackatonIADT",
-      "env": {
-        "IADT_API_URL": "http://localhost:8000"
-      }
+      "url": "http://localhost:8000/mcp"
     }
   }
 }
