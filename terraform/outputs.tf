@@ -1,13 +1,20 @@
-# Output definitions for Bedrock configuration
-
-output "bedrock_model_arn" {
-  value = aws_bedrock_model.diagram_analysis_model.model_arn
+output "access_key_id" {
+  description = "AWS Access Key ID"
+  value       = aws_iam_access_key.bedrock_key.id
 }
 
-output "bedrock_endpoint_arn" {
-  value = aws_bedrock_foundation_model_endpoint.diagram_analysis_endpoint.arn
+output "secret_access_key" {
+  description = "AWS Secret Access Key"
+  value       = aws_iam_access_key.bedrock_key.secret
+  sensitive   = true
 }
 
-output "provisioned_throughput_arn" {
-  value = aws_bedrock_provisioned_throughput.diagram_analysis_throughput.arn
+output "user_arn" {
+  description = "IAM User ARN"
+  value       = aws_iam_user.bedrock_user.arn
+}
+
+output "region" {
+  description = "AWS Region"
+  value       = data.aws_region.current.name
 }

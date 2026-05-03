@@ -189,7 +189,47 @@ Para executar o projeto localmente com Docker, siga estas etapas:
 
 ---
 
-## 6. Tudo pronto! Bora usar o sistema
+## 7. Infraestrutura (Terraform)
+
+O projeto inclui arquivos Terraform para provisionar automaticamente o usuário IAM com as permissões necessárias para o Amazon Bedrock.
+
+### 7.1 Provisionamento
+
+1.  Navegue até a pasta terraform:
+    ```bash
+    cd terraform
+    ```
+2.  Inicialize o Terraform:
+    ```bash
+    terraform init
+    ```
+3.  Aplique a configuração:
+    ```bash
+    terraform apply
+    ```
+
+### 7.2 Obtendo as Credenciais (Secrets)
+
+Como as chaves de acesso são informações sensíveis, elas são marcadas como `sensitive` no Terraform. Para visualizá-las e configurar seu arquivo `.env`, utilize os seguintes comandos:
+
+-   **AWS Access Key ID:**
+    ```bash
+    terraform output -raw access_key_id
+    ```
+-   **AWS Secret Access Key:**
+    ```bash
+    terraform output -raw secret_access_key
+    ```
+-   **Região AWS:**
+    ```bash
+    terraform output -raw region
+    ```
+
+Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
+
+---
+
+## 8. Tudo pronto! Bora usar o sistema
 
 O sistema está pronto para análise de diagramas arquiteturais!
 
