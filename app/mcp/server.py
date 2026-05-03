@@ -64,11 +64,6 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Conteúdo da imagem codificado em base64",
                     },
-                    "model_type": {
-                        "type": "string",
-                        "enum": ["gemini", "bedrock"],
-                        "description": "Provedor de IA a ser usado (padrão: gemini)",
-                    },
                 },
                 "anyOf": [
                     {"required": ["file_path"]},
@@ -93,11 +88,6 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Conteúdo da imagem codificado em base64",
                     },
-                    "model_type": {
-                        "type": "string",
-                        "enum": ["gemini", "bedrock"],
-                        "description": "Provedor de IA a ser usado (padrão: gemini)",
-                    },
                 },
                 "anyOf": [
                     {"required": ["file_path"]},
@@ -108,7 +98,7 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-def _build_input(file_path: str | None, image_base64: str | None, model_type: str) -> DiagramInput:
+def _build_input(file_path: str | None, image_base64: str | None) -> DiagramInput:
     """Constrói DiagramInput a partir dos argumentos, tratando PDF se necessário."""
     b64: str | None = image_base64
     resolved_path: str | None = file_path
@@ -120,7 +110,8 @@ def _build_input(file_path: str | None, image_base64: str | None, model_type: st
     if not b64:
         raise ValueError("É necessário fornecer 'file_path' ou 'image_base64'.")
 
-    return DiagramInput(image_base64=b64, file_path=resolved_path, model_type=model_type)  # type: ignore[arg-type]
+    # model_type será definido pelo AIClient usando seu valor padrão
+    return DiagramInput(image_base64=b64, file_path=resolved_path)  # type: ignore[arg-type]
 
 
 @server.call_tool()
@@ -139,10 +130,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 async def _handle_analyze_diagram(arguments: dict) -> list[TextContent]:
     file_path = arguments.get("file_path")
     image_base64 = arguments.get("image_base64")
-    model_type = arguments.get("model_type", "gemini")
 
-    input_data = _build_input(file_path, image_base64, model_type)
-    client = AIClient(model_id=model_type)
+    input_data = _build_input(file_path, image_base64)
+    client = AIClient()  # Use default model from settings
     repo = FileOutputRepository()
     use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
 
@@ -153,10 +143,9 @@ async def _handle_analyze_diagram(arguments: dict) -> list[TextContent]:
 async def _handle_analyze_security(arguments: dict) -> list[TextContent]:
     file_path = arguments.get("file_path")
     image_base64 = arguments.get("image_base64")
-    model_type = arguments.get("model_type", "gemini")
 
-    input_data = _build_input(file_path, image_base64, model_type)
-    client = AIClient(model_id=model_type)
+    input_data = _build_input(file_path, image_base64)
+    client = AIClient()  # Use default model from settings
     repo = FileOutputRepository()
     use_case = SecurityAnalysisUseCase(ai_client=client, repository=repo)
 
