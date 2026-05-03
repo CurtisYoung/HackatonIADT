@@ -46,7 +46,7 @@ O projeto segue os princípios da **Clean Architecture**, com dependências flui
 └──────────────┬───────┘  └───────────────────────────┘
                │ AIAnalysisOutput (Pydantic)
 ┌──────────────▼───────────────────────────────────────┐
-│  DomÃ­nio   app/domain/                               │
+│  Domínio   app/domain/                               │
 │  schemas.py · repositories.py  (contratos puros)    │
 └──────────────────────────────────────────────────────┘
 ```
@@ -64,10 +64,10 @@ Isso garante rastreabilidade completa de todas as análises realizadas, sem acop
 
 ---
 
-## 3. Pipeline de IA e ResiliÃªncia
+## 3. Pipeline de IA e Resiliência
 
 ```
-RequisiÃ§Ã£o HTTP
+Requisição HTTP
       │
       ▼
 GeminiClient.analyze_image()
@@ -153,7 +153,7 @@ Para executar o projeto localmente com Docker, siga estas etapas:
    ```bash
    # Construir e iniciar os contêineres
    docker-compose up --build
-   
+    
    # Para rodar em modo daemon (em segundo plano)
    docker-compose up -d
    ```
