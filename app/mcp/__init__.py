@@ -1,3 +1,2 @@
-from app.mcp.server import mcp
-
-__all__ = ["mcp"]
+# do not export anything yet
+__all__: list[str] = []

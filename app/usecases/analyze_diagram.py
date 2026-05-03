@@ -1,5 +1,4 @@
 from __future__ import annotations
-from __future__ import annotations
 import tempfile
 from app.domain.repositories import OutputRepository
 from app.domain.schemas import AIAnalysisOutput, DiagramInput
@@ -19,7 +18,7 @@ class AnalyzeDiagramUseCase:
         """
         Processa o arquivo (imagem ou PDF), envia para análise e salva o resultado.
         """
-        if input_data.file_path.endswith(".pdf"):
+        if input_data.file_path and input_data.file_path.endswith(".pdf"):
             pdf_content = base64.b64decode(input_data.image_base64)
             with tempfile.NamedTemporaryFile(suffix=".pdf") as temp_pdf:
                 temp_pdf.write(pdf_content)

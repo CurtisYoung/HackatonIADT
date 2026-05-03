@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes import _get_gemini_client, _get_repository
 from app.domain.repositories import OutputRepository
-from app.domain.schemas import AIAnalysisOutput
+from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, ArchitecturalRisk, Recommendation
 from app.main import app
 
 ENDPOINT = "/analyze-diagram"
@@ -20,11 +20,21 @@ EXPECTED_KEYS: frozenset[str] = frozenset(
 )
 
 _FAKE_OUTPUT = AIAnalysisOutput(
-    identified_components=["API Gateway", "Database"],
-    architectural_risks=[
-        "Single point of failure in the API gateway causes total service outage during peak load."
+    identified_components=[
+        IdentifiedComponent(id="c1", name="API Gateway", type="Gateway", function="Entry point"),
+        IdentifiedComponent(id="c2", name="Database", type="Database", function="Storage"),
     ],
-    recommendations=["Add redundancy to the gateway."],
+    architectural_risks=[
+        ArchitecturalRisk(
+            risk="Single point of failure in the API gateway",
+            severity="High",
+            impact="Total service outage",
+            affected_components=["c1"],
+        )
+    ],
+    recommendations=[
+        Recommendation(action="Add redundancy", mitigates_risk="Single point of failure in the API gateway")
+    ],
 )
 
 

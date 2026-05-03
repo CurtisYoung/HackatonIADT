@@ -19,7 +19,7 @@ class DiagramInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     image_base64: str
-    file_path: str
+    file_path: Optional[str] = None
     model_type: Literal["gemini", "bedrock"] = "gemini"
 
 

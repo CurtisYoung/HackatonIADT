@@ -15,7 +15,7 @@ from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 from app.usecases.security_analysis import SecurityAnalysisUseCase
 
-router = APIRouter(prefix="/analyze", tags=["Analysis"])
+router = APIRouter(tags=["Analysis"])
 
 
 def _get_redis() -> redis.Redis:
@@ -28,6 +28,9 @@ def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClien
         return AIClient(model_id=model_id)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {exc}")
+
+
+_get_gemini_client = _get_ai_client  # Alias para compatibilidade com testes
 
 
 def _get_repository() -> FileOutputRepository:
@@ -48,15 +51,15 @@ def _get_security_use_case(
     return SecurityAnalysisUseCase(ai_client=client, repository=repo)
 
 
-def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
+async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
     """Função executada em background para não bloquear a resposta da API."""
     try:
         client = _get_ai_client(model_id=input_data.model_type)
         repo = _get_repository()
         use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
 
-        result = asyncio.run(use_case.execute(input_data))
-        
+        result = await use_case.execute(input_data)
+
         task_data = {"status": "completed", "result": result.model_dump_json()}
         redis_client.set(task_id, json.dumps(task_data))
 
@@ -66,7 +69,7 @@ def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_cl
 
 
 @router.post(
-    "/diagram/async",
+    "/analyze/diagram/async",
     response_model=TaskStatus,
     summary="Inicia a análise de um diagrama de forma assíncrona",
     status_code=202,
@@ -89,7 +92,7 @@ async def analyze_diagram_async(
 
 
 @router.get(
-    "/status/{task_id}",
+    "/analyze/status/{task_id}",
     response_model=TaskStatus,
     summary="Consulta o status de uma análise",
 )
@@ -98,13 +101,13 @@ async def get_analysis_status(task_id: str, redis_client: redis.Redis = Depends(
     task_data = redis_client.get(task_id)
     if not task_data:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
-    
+
     task = json.loads(task_data)
     return TaskStatus(task_id=task_id, status=task["status"], error=task.get("error"))
 
 
 @router.get(
-    "/result/{task_id}",
+    "/analyze/result/{task_id}",
     response_model=AIAnalysisOutput,
     summary="Obtém o resultado de uma análise concluída",
 )
@@ -124,9 +127,14 @@ async def get_analysis_result(task_id: str, redis_client: redis.Redis = Depends(
 
 
 @router.post(
-    "/diagram/sync",
+    "/analyze/diagram/sync",
     response_model=AIAnalysisOutput,
     summary="Executa a análise de diagrama de forma síncrona",
+)
+@router.post(
+    "/analyze-diagram",
+    response_model=AIAnalysisOutput,
+    include_in_schema=False,
 )
 async def analyze_diagram_sync(
     input_data: DiagramInput,
@@ -140,10 +148,15 @@ async def analyze_diagram_sync(
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro interno: {exc}")
+        # Tenta extrair código de status se disponível (ex: de erros do SDK)
+        status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
+        if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
+            status_code = 500
+        raise HTTPException(status_code=status_code, detail=f"Erro na análise: {exc}")
+
 
 @router.post(
-    "/security/sync",
+    "/analyze/security/sync",
     response_model=SecurityAnalysisOutput,
     summary="Executa a análise de segurança de forma síncrona",
 )
@@ -151,6 +164,7 @@ async def analyze_security_sync(
     input_data: DiagramInput,
     use_case: SecurityAnalysisUseCase = Depends(_get_security_use_case),
 ) -> SecurityAnalysisOutput:
+
     """
     Endpoint síncrono para análise de segurança.
     """
@@ -159,4 +173,8 @@ async def analyze_security_sync(
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro interno: {exc}")
+        # Tenta extrair código de status se disponível (ex: de erros do SDK)
+        status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
+        if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
+            status_code = 500
+        raise HTTPException(status_code=status_code, detail=f"Erro na análise: {exc}")

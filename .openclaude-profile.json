@@ -1,0 +1,12 @@
+{
+  "profile": "openai",
+  "env": {
+    "OPENAI_BASE_URL": "https://ollama.com/api/v1",
+    "OPENAI_MODEL": "qwen3.5:cloud",
+    "OPENAI_API_FORMAT": "chat_completions",
+    "OPENAI_AUTH_HEADER": "a24ed9247c2948a693c67fd46a8901d9.9NEE_awc4SBbbX0F7XfqnaY-",
+    "OPENAI_AUTH_SCHEME": "raw",
+    "OPENAI_API_KEY": "a24ed9247c2948a693c67fd46a8901d9.9NEE_awc4SBbbX0F7XfqnaY-"
+  },
+  "createdAt": "2026-05-03T16:22:44.855Z"
+}
