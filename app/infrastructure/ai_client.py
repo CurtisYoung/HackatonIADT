@@ -3,6 +3,7 @@ import base64
 import os
 from typing import Literal
 import litellm
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from app.core.logging import get_logger
 from app.domain.schemas import AIAnalysisOutput, SecurityAnalysisOutput
@@ -21,6 +22,7 @@ You are a Senior Software Architect and Cloud Infrastructure Auditor. Your task 
 ## CONSTRAINTS
 - Output MUST be a valid JSON object.
 - Be precise: Reference specific component names in your risk analysis.
+- Risk titles MUST be descriptive and have at least 5 words.
 - If an element is blurry or its function is unclear, list it under "uncertainties" rather than guessing.
 - Keep descriptions concise, technical, and objective.
 
@@ -75,7 +77,7 @@ You are a Senior Security Analyst. Your task is to perform a security audit of t
 """
 
 SUPPORTED_MODELS = {
-    "gemini": "gemini/gemini-1.5-flash",
+    "gemini": "gemini/gemini-2.5-flash",
     "bedrock": "bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
 }
 
