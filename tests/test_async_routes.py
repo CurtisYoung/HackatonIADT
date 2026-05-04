@@ -30,16 +30,16 @@ _FAKE_OUTPUT = AIAnalysisOutput(
     ],
 )
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def setup_overrides():
     app.dependency_overrides[_get_redis] = lambda: _MOCK_REDIS
     app.dependency_overrides[_get_ai_client] = lambda: _MOCK_AI_CLIENT
     app.dependency_overrides[_get_repository] = lambda: _MOCK_REPO
     yield
-    app.dependency_overrides = {}
+    app.dependency_overrides.clear()
 
 @pytest.fixture
-def client():
+def client(setup_overrides):
     with TestClient(app) as c:
         yield c
 

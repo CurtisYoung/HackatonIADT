@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import _get_gemini_client, _get_repository
+from app.api.routes import _get_ai_client, _get_repository, _get_redis
 from app.domain.repositories import OutputRepository
 from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, ArchitecturalRisk, Recommendation
 from app.main import app
@@ -50,9 +51,19 @@ def _mock_repository() -> AsyncMock:
     return mock
 
 
-# Override dependencies globally for all route tests
-app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
-app.dependency_overrides[_get_repository] = _mock_repository
+@pytest.fixture
+def _override_dependencies():
+    app.dependency_overrides[_get_ai_client] = _mock_gemini_client
+    app.dependency_overrides[_get_redis] = lambda: MagicMock()
+    app.dependency_overrides[_get_repository] = _mock_repository
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(_override_dependencies):
+    with TestClient(app) as c:
+        yield c
 
 
 def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
@@ -106,10 +117,10 @@ def test_analyze_diagram_returns_503_when_ai_unavailable(client: TestClient) -> 
         mock.analyze_image.side_effect = err
         return mock
 
-    app.dependency_overrides[_get_gemini_client] = _mock_failing_gemini_client
+    app.dependency_overrides[_get_ai_client] = _mock_failing_gemini_client
     try:
         response = client.post(ENDPOINT, json=VALID_PAYLOAD)
         assert response.status_code == 503
     finally:
         # Restaura o mock original para não contaminar outros testes.
-        app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
+        app.dependency_overrides[_get_ai_client] = _mock_gemini_client

@@ -3,20 +3,20 @@ from __future__ import annotations
 import base64
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
 
-from google.genai import errors as genai_errors
-
 from app.domain.repositories import OutputRepository
-from app.domain.schemas import AIAnalysisOutput, DiagramInput
-from app.infrastructure.ai_client import (
-    GeminiClient,
-    _FALLBACK_MODEL,
-    _PRIMARY_MODEL,
+from app.domain.schemas import (
+    AIAnalysisOutput,
+    ArchitecturalRisk,
+    DiagramInput,
+    IdentifiedComponent,
+    Recommendation,
 )
+from app.infrastructure.ai_client import AIClient
 from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 
@@ -51,7 +51,7 @@ async def test_analyze_diagram_usecase_returns_expected_output() -> None:
 
     input_data = DiagramInput(image_base64=_load_image_base64())
     use_case = AnalyzeDiagramUseCase(
-        ai_client=GeminiClient(),
+        ai_client=AIClient(),
         repository=_mock_repository(),
     )
     result = await use_case.execute(input_data)
@@ -65,18 +65,31 @@ async def test_analyze_diagram_usecase_returns_expected_output() -> None:
     assert len(result.recommendations) > 0
 
     for risk in result.architectural_risks:
-        assert len(risk) <= 300, f"Risk exceeds 300 characters: {risk!r}"
+        assert len(risk.risk) <= 300, f"Risk exceeds 300 characters: {risk!r}"
 
 
 @pytest.mark.asyncio
 async def test_usecase_calls_repository_save() -> None:
     """O caso de uso deve chamar repository.save() exatamente uma vez com o resultado da IA."""
     fake_result = AIAnalysisOutput(
-        identified_components=["API Gateway", "Load Balancer"],
-        architectural_risks=[
-            "Single point of failure in the API gateway causes total service outage during peak load."
+        identified_components=[
+            IdentifiedComponent(id="c1", name="API Gateway", type="Gateway", function="Entry point"),
+            IdentifiedComponent(id="c2", name="Load Balancer", type="LB", function="Traffic distribution"),
         ],
-        recommendations=["Add a secondary gateway instance with health checks."],
+        architectural_risks=[
+            ArchitecturalRisk(
+                risk="Single point of failure in the API gateway causes total service outage during peak load.",
+                severity="Critical",
+                impact="Total service outage",
+                affected_components=["c1"],
+            )
+        ],
+        recommendations=[
+            Recommendation(
+                action="Add a secondary gateway instance with health checks.",
+                mitigates_risk="Single point of failure in the API gateway causes total service outage during peak load.",
+            )
+        ],
     )
 
     mock_ai = AsyncMock()
@@ -97,11 +110,24 @@ async def test_file_repository_saves_json(tmp_path: Path) -> None:
     """FileOutputRepository deve criar um arquivo JSON no diretório de saída configurado."""
     repo = FileOutputRepository(output_dir=tmp_path)
     analysis = AIAnalysisOutput(
-        identified_components=["Database", "Cache"],
-        architectural_risks=[
-            "No replication on the database layer means data loss on instance failure."
+        identified_components=[
+            IdentifiedComponent(id="c1", name="Database", type="Database", function="Data storage"),
+            IdentifiedComponent(id="c2", name="Cache", type="Cache", function="Performance layer"),
         ],
-        recommendations=["Enable multi-AZ replication for the primary database."],
+        architectural_risks=[
+            ArchitecturalRisk(
+                risk="No replication on the database layer means data loss on instance failure.",
+                severity="Critical",
+                impact="Data loss on instance failure",
+                affected_components=["c1"],
+            )
+        ],
+        recommendations=[
+            Recommendation(
+                action="Enable multi-AZ replication for the primary database.",
+                mitigates_risk="No replication on the database layer means data loss on instance failure.",
+            )
+        ],
     )
 
     await repo.save(analysis)
@@ -122,14 +148,26 @@ def test_aianalysisoutput_rejects_vague_risk() -> None:
     """
     with pytest.raises(ValidationError) as exc_info:
         AIAnalysisOutput(
-            identified_components=["API Gateway", "Load Balancer"],
-            architectural_risks=["Security risk."],  # only 2 words — must fail
-            recommendations=["Improve security posture."],
+            identified_components=[
+                IdentifiedComponent(id="c1", name="API Gateway", type="Gateway", function="Entry"),
+                IdentifiedComponent(id="c2", name="Load Balancer", type="LB", function="Distribution"),
+            ],
+            architectural_risks=[
+                ArchitecturalRisk(
+                    risk="Security risk.",
+                    severity="High",
+                    impact="Unknown",
+                    affected_components=["c1"],
+                )
+            ],
+            recommendations=[
+                Recommendation(action="Improve security posture.", mitigates_risk="Security risk.")
+            ],
         )
 
     errors = exc_info.value.errors()
     assert any(
-        "at least 10 words" in str(e.get("msg", "")) for e in errors
+        "pelo menos 5 palavras" in str(e.get("msg", "")) for e in errors
     ), f"Expected minimum-word error, got: {errors}"
 
 
@@ -141,54 +179,43 @@ def test_aianalysisoutput_rejects_generic_component() -> None:
     """
     with pytest.raises(ValidationError) as exc_info:
         AIAnalysisOutput(
-            identified_components=["box", "arrow"],  # generic — must fail
-            architectural_risks=[
-                "No authentication layer exposes all internal services to the public internet."
+            identified_components=[
+                IdentifiedComponent(id="c1", name="box", type="Shape", function="Visual"),
+                IdentifiedComponent(id="c2", name="arrow", type="Shape", function="Visual"),
             ],
-            recommendations=["Add an authentication gateway."],
+            architectural_risks=[
+                ArchitecturalRisk(
+                    risk="No authentication layer exposes all internal services to the public internet.",
+                    severity="Critical",
+                    impact="Data breach",
+                    affected_components=["c1"],
+                )
+            ],
+            recommendations=[
+                Recommendation(
+                    action="Add an authentication gateway.",
+                    mitigates_risk="No authentication layer exposes all internal services to the public internet.",
+                )
+            ],
         )
 
     errors = exc_info.value.errors()
     assert any(
-        "too generic" in str(e.get("msg", "")) for e in errors
+        "genérico demais" in str(e.get("msg", "")) for e in errors
     ), f"Expected generic-component error, got: {errors}"
 
 
 @pytest.mark.asyncio
-async def test_gemini_client_falls_back_on_retriable_error() -> None:
-    """GeminiClient deve trocar automaticamente para o modelo de fallback quando o
-    principal falha com erro HTTP retriável (429, 500, 503 ou 504).
+async def test_ai_client_model_id_gemini() -> None:
+    """AIClient com model_id='gemini' deve ser criado sem erro e expor o model_id."""
+    if not os.environ.get("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set — skipping real API integration test")
 
-    Verifica que:
-    - O modelo principal é chamado primeiro.
-    - Em caso de erro retriável, o modelo de fallback é utilizado.
-    - O resultado final do fallback é retornado corretamente.
-    """
-    fake_result = AIAnalysisOutput(
-        identified_components=["API Gateway", "Load Balancer"],
-        architectural_risks=[
-            "Single point of failure in the API gateway causes total service outage during peak load."
-        ],
-        recommendations=["Add a secondary gateway instance with health checks."],
-    )
+    client = AIClient(model_id="gemini")
+    assert client.model_id == "gemini"
 
-    models_called: list[str] = []
+    fake_image = base64.b64encode(b"fake-image").decode()
+    result = await client.analyze_image(fake_image)
 
-    def _mock_retries(model: str, contents: list) -> AIAnalysisOutput:
-        models_called.append(model)
-        if model == _PRIMARY_MODEL:
-            # Simula sobrecarga 503 no modelo principal.
-            err = genai_errors.ServerError.__new__(genai_errors.ServerError)
-            err.code = 503
-            raise err
-        return fake_result
-
-    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key"}):
-        client = GeminiClient()
-        client._call_with_guardrail_retries = _mock_retries  # type: ignore[method-assign]
-        result = await client.analyze_image(base64.b64encode(b"fake-image").decode())
-
-    assert result == fake_result
-    assert models_called == [_PRIMARY_MODEL, _FALLBACK_MODEL], (
-        f"Expected [{_PRIMARY_MODEL!r}, {_FALLBACK_MODEL!r}], got {models_called}"
-    )
+    assert isinstance(result, AIAnalysisOutput)
+    assert isinstance(result.identified_components, list)
