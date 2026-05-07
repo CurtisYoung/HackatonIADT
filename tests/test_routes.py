@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import _get_gemini_client, _get_repository
+from app.api.routes import _get_ai_client, _get_repository, _get_redis
 from app.domain.repositories import OutputRepository
-from app.domain.schemas import AIAnalysisOutput
+from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, ArchitecturalRisk, Recommendation
 from app.main import app
 
 ENDPOINT = "/analyze-diagram"
@@ -20,11 +21,21 @@ EXPECTED_KEYS: frozenset[str] = frozenset(
 )
 
 _FAKE_OUTPUT = AIAnalysisOutput(
-    identified_components=["API Gateway", "Database"],
-    architectural_risks=[
-        "Single point of failure in the API gateway causes total service outage during peak load."
+    identified_components=[
+        IdentifiedComponent(id="c1", name="API Gateway", type="Gateway", function="Entry point"),
+        IdentifiedComponent(id="c2", name="Database", type="Database", function="Storage"),
     ],
-    recommendations=["Add redundancy to the gateway."],
+    architectural_risks=[
+        ArchitecturalRisk(
+            risk="Single point of failure in the API gateway",
+            severity="High",
+            impact="Total service outage",
+            affected_components=["c1"],
+        )
+    ],
+    recommendations=[
+        Recommendation(action="Add redundancy", mitigates_risk="Single point of failure in the API gateway")
+    ],
 )
 
 
@@ -40,9 +51,19 @@ def _mock_repository() -> AsyncMock:
     return mock
 
 
-# Override dependencies globally for all route tests
-app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
-app.dependency_overrides[_get_repository] = _mock_repository
+@pytest.fixture
+def _override_dependencies():
+    app.dependency_overrides[_get_ai_client] = _mock_gemini_client
+    app.dependency_overrides[_get_redis] = lambda: MagicMock()
+    app.dependency_overrides[_get_repository] = _mock_repository
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(_override_dependencies):
+    with TestClient(app) as c:
+        yield c
 
 
 def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
@@ -96,10 +117,10 @@ def test_analyze_diagram_returns_503_when_ai_unavailable(client: TestClient) -> 
         mock.analyze_image.side_effect = err
         return mock
 
-    app.dependency_overrides[_get_gemini_client] = _mock_failing_gemini_client
+    app.dependency_overrides[_get_ai_client] = _mock_failing_gemini_client
     try:
         response = client.post(ENDPOINT, json=VALID_PAYLOAD)
         assert response.status_code == 503
     finally:
         # Restaura o mock original para não contaminar outros testes.
-        app.dependency_overrides[_get_gemini_client] = _mock_gemini_client
+        app.dependency_overrides[_get_ai_client] = _mock_gemini_client

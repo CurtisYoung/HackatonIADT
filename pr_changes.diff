@@ -1,0 +1,874 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..49e89e6
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,6 @@
++GEMINI_API_KEY=
++AWS_ACCESS_KEY_ID=
++AWS_SECRET_ACCESS_KEY=
++AWS_REGION_NAME=
++REDIS_HOST=localhost
++REDIS_PORT=6379
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..78e9010
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,17 @@
++# Use an official Python runtime as a parent image
++FROM python:3.11-slim
++
++# Set the working directory in the container
++WORKDIR /app
++
++# Copy the dependencies file to the working directory
++COPY requirements.txt .
++
++# Install any needed dependencies
++RUN pip install --no-cache-dir -r requirements.txt
++
++# Copy the rest of the application code
++COPY . .
++
++# Command to run the application
++CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+diff --git a/app/api/routes.py b/app/api/routes.py
+index c9b236f..b3b84ca 100644
+--- a/app/api/routes.py
++++ b/app/api/routes.py
+@@ -1,70 +1,162 @@
+ from __future__ import annotations
++import asyncio
++import json
++import uuid
++from typing import Any, Literal
+ 
+-from fastapi import APIRouter, Depends, HTTPException
+-from google.genai import errors as genai_errors
++from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+ from pydantic import ValidationError
++import redis
+ 
+-from app.domain.schemas import AIAnalysisOutput, DiagramInput
+-from app.infrastructure.ai_client import GeminiClient
++from app.core.redis import get_redis_client
++from app.domain.schemas import AIAnalysisOutput, DiagramInput, TaskStatus, SecurityAnalysisOutput
++from app.infrastructure.ai_client import AIClient
+ from app.infrastructure.file_repository import FileOutputRepository
+ from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
++from app.usecases.security_analysis import SecurityAnalysisUseCase
+ 
+-router = APIRouter(prefix="/analyze-diagram", tags=["Analysis"])
++router = APIRouter(prefix="/analyze", tags=["Analysis"])
+ 
+ 
+-def _get_gemini_client() -> GeminiClient:
+-    """Fábrica do cliente Gemini — cria uma nova instância por requisição."""
++def _get_redis() -> redis.Redis:
++    return get_redis_client()
++
++
++def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
++    """Fábrica do cliente de IA, com suporte a múltiplos provedores."""
+     try:
+-        return GeminiClient()
++        return AIClient(model_id=model_id)
+     except ValueError as exc:
+-        # Chave de API ausente ou inválida — erro de configuração do servidor.
+-        raise HTTPException(
+-            status_code=500,
+-            detail=f"Erro de configuração da API de IA: {exc}",
+-        ) from exc
++        raise HTTPException(status_code=500, detail=f"Erro de configuração: {exc}")
+ 
+ 
+ def _get_repository() -> FileOutputRepository:
+-    """Fábrica do repositório de saída — cria uma nova instância por requisição."""
+     return FileOutputRepository()
+ 
+ 
+-def _get_use_case(
+-    ai_client: GeminiClient = Depends(_get_gemini_client),
+-    repository: FileOutputRepository = Depends(_get_repository),
++def _get_diagram_use_case(
++    client: AIClient = Depends(_get_ai_client),
++    repo: FileOutputRepository = Depends(_get_repository),
+ ) -> AnalyzeDiagramUseCase:
+-    """Fábrica do caso de uso com injeção do cliente de IA e do repositório."""
+-    return AnalyzeDiagramUseCase(ai_client=ai_client, repository=repository)
++    return AnalyzeDiagramUseCase(ai_client=client, repository=repo)
++
++
++def _get_security_use_case(
++    client: AIClient = Depends(_get_ai_client),
++    repo: FileOutputRepository = Depends(_get_repository),
++) -> SecurityAnalysisUseCase:
++    return SecurityAnalysisUseCase(ai_client=client, repository=repo)
++
++
++def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
++    """Função executada em background para não bloquear a resposta da API."""
++    try:
++        client = _get_ai_client(model_id=input_data.model_type)
++        repo = _get_repository()
++        use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
++
++        result = asyncio.run(use_case.execute(input_data))
++        
++        task_data = {"status": "completed", "result": result.model_dump_json()}
++        redis_client.set(task_id, json.dumps(task_data))
++
++    except Exception as e:
++        task_data = {"status": "failed", "error": str(e)}
++        redis_client.set(task_id, json.dumps(task_data))
+ 
+ 
+ @router.post(
+-    "",
++    "/diagram/async",
++    response_model=TaskStatus,
++    summary="Inicia a análise de um diagrama de forma assíncrona",
++    status_code=202,
++)
++async def analyze_diagram_async(
++    input_data: DiagramInput,
++    background_tasks: BackgroundTasks,
++    redis_client: redis.Redis = Depends(_get_redis),
++) -> TaskStatus:
++    """
++    Recebe um diagrama, inicia a análise em background e retorna um ID de tarefa.
++    """
++    task_id = str(uuid.uuid4())
++    task_data = {"status": "processing"}
++    redis_client.set(task_id, json.dumps(task_data))
++
++    background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
++
++    return TaskStatus(task_id=task_id, status="processing")
++
++
++@router.get(
++    "/status/{task_id}",
++    response_model=TaskStatus,
++    summary="Consulta o status de uma análise",
++)
++async def get_analysis_status(task_id: str, redis_client: redis.Redis = Depends(_get_redis)) -> TaskStatus:
++    """Verifica e retorna o status atual de uma tarefa de análise."""
++    task_data = redis_client.get(task_id)
++    if not task_data:
++        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
++    
++    task = json.loads(task_data)
++    return TaskStatus(task_id=task_id, status=task["status"], error=task.get("error"))
++
++
++@router.get(
++    "/result/{task_id}",
+     response_model=AIAnalysisOutput,
+-    summary="Analyzes an architectural diagram via AI",
+-    status_code=200,
++    summary="Obtém o resultado de uma análise concluída",
+ )
+-async def analyze_diagram(
++async def get_analysis_result(task_id: str, redis_client: redis.Redis = Depends(_get_redis)) -> AIAnalysisOutput:
++    """Retorna o resultado final de uma análise, se estiver concluída."""
++    task_data = redis_client.get(task_id)
++    if not task_data:
++        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
++
++    task = json.loads(task_data)
++    if task["status"] != "completed":
++        raise HTTPException(
++            status_code=400,
++            detail=f"A tarefa ainda não foi concluída (status: {task['status']}).",
++        )
++    return AIAnalysisOutput.model_validate_json(task["result"])
++
++
++@router.post(
++    "/diagram/sync",
++    response_model=AIAnalysisOutput,
++    summary="Executa a análise de diagrama de forma síncrona",
++)
++async def analyze_diagram_sync(
+     input_data: DiagramInput,
+-    use_case: AnalyzeDiagramUseCase = Depends(_get_use_case),
++    use_case: AnalyzeDiagramUseCase = Depends(_get_diagram_use_case),
+ ) -> AIAnalysisOutput:
+-    """Recebe um diagrama (base64 ou URL), processa via Gemini Vision e retorna a análise estruturada."""
++    """
++    Mantém o endpoint síncrono original para casos de uso diretos.
++    """
+     try:
+         return await use_case.execute(input_data)
+-    except (genai_errors.ServerError, genai_errors.ClientError) as exc:
+-        # Todos os modelos falharam — propaga como 503 para o cliente.
+-        raise HTTPException(
+-            status_code=503,
+-            detail=f"Serviço de IA indisponível após todas as tentativas de fallback: {exc}",
+-        ) from exc
+     except ValidationError as exc:
+-        # Guardrails do Pydantic falharam após todas as tentativas de autocorreção.
+-        raise HTTPException(
+-            status_code=500,
+-            detail=f"Resposta do modelo não passou nos guardrails: {exc}",
+-        ) from exc
++        raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
+     except Exception as exc:
+-        # Erro inesperado — registra e retorna 500 genérico.
+-        raise HTTPException(
+-            status_code=500,
+-            detail=f"Erro interno ao processar o diagrama: {exc}",
+-        ) from exc
++        raise HTTPException(status_code=500, detail=f"Erro interno: {exc}")
++
++@router.post(
++    "/security/sync",
++    response_model=SecurityAnalysisOutput,
++    summary="Executa a análise de segurança de forma síncrona",
++)
++async def analyze_security_sync(
++    input_data: DiagramInput,
++    use_case: SecurityAnalysisUseCase = Depends(_get_security_use_case),
++) -> SecurityAnalysisOutput:
++    """
++    Endpoint síncrono para análise de segurança.
++    """
++    try:
++        return await use_case.execute(input_data)
++    except ValidationError as exc:
++        raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
++    except Exception as exc:
++        raise HTTPException(status_code=500, detail=f"Erro interno: {exc}")
+diff --git a/app/core/logging.py b/app/core/logging.py
+new file mode 100644
+index 0000000..5f2dbe6
+--- /dev/null
++++ b/app/core/logging.py
+@@ -0,0 +1,23 @@
++from __future__ import annotations
++
++import logging
++from pythonjsonlogger import jsonlogger
++
++def get_logger(name: str) -> logging.Logger:
++    """Configura e retorna um logger com formato JSON."""
++    logger = logging.getLogger(name)
++    logger.setLevel(logging.INFO)
++    
++    # Evita adicionar handlers duplicados
++    if not logger.handlers:
++        handler = logging.StreamHandler()
++        formatter = jsonlogger.JsonFormatter(
++            fmt="%(asctime)s %(name)s %(levelname)s %(message)s"
++        )
++        handler.setFormatter(formatter)
++        logger.addHandler(handler)
++        
++    return logger
++
++# Logger genérico para uso em toda a aplicação
++log = get_logger(__name__)
+diff --git a/app/core/redis.py b/app/core/redis.py
+new file mode 100644
+index 0000000..7fb6004
+--- /dev/null
++++ b/app/core/redis.py
+@@ -0,0 +1,10 @@
++from __future__ import annotations
++
++import os
++import redis
++
++def get_redis_client() -> redis.Redis:
++    """Cria e retorna um cliente Redis."""
++    redis_host = os.environ.get("REDIS_HOST", "localhost")
++    redis_port = int(os.environ.get("REDIS_PORT", 6379))
++    return redis.Redis(host=redis_host, port=redis_port, db=0, decode_responses=True)
+diff --git a/app/domain/schemas.py b/app/domain/schemas.py
+index 0b9d44e..43c8d11 100644
+--- a/app/domain/schemas.py
++++ b/app/domain/schemas.py
+@@ -1,73 +1,83 @@
+ from __future__ import annotations
+ 
+-from typing import Annotated, Optional
++from typing import Literal, Optional
+ 
+-from pydantic import BaseModel, ConfigDict, Field, field_validator
++from pydantic import BaseModel, ConfigDict, field_validator
+ 
+-# Termos genéricos e não-técnicos que indicam que o LLM descreveu formas visuais
+-# do diagrama em vez dos componentes arquiteturais reais.
+ _GENERIC_COMPONENT_TERMS: frozenset[str] = frozenset(
+     {
+         "box", "arrow", "shape", "element", "item", "object", "figure",
+         "line", "circle", "rectangle", "square", "triangle", "oval",
+-        # Variantes em português (proteção contra respostas mistas de idioma)
+         "caixa", "seta", "forma", "elemento", "item", "objeto",
+     }
+ )
+-
+-_MIN_RISK_WORDS = 10
++_MIN_RISK_WORDS = 5
+ 
+ 
+ class DiagramInput(BaseModel):
+-    """Payload de entrada para o endpoint de análise de diagramas."""
+-
++    """Payload de entrada para análise, suportando múltiplos tipos e modelos."""
+     model_config = ConfigDict(str_strip_whitespace=True)
+ 
+     image_base64: str
+-    url: Optional[str] = None
++    file_path: str
++    model_type: Literal["gemini", "bedrock"] = "gemini"
+ 
+ 
+-class AIAnalysisOutput(BaseModel):
+-    """Esquema de saída estruturada exigido do LLM via Gemini Vision."""
++class TaskStatus(BaseModel):
++    """Representa o status de uma tarefa assíncrona."""
++    task_id: str
++    status: Literal["processing", "completed", "failed"]
++    error: Optional[str] = None
+ 
+-    model_config = ConfigDict(frozen=True)
+ 
+-    identified_components: list[str]
+-    architectural_risks: list[Annotated[str, Field(max_length=300)]]
+-    recommendations: list[str]
++class IdentifiedComponent(BaseModel):
++    id: str
++    name: str
++    type: str
++    function: str
+ 
+-    @field_validator("architectural_risks", mode="before")
++    @field_validator("name")
+     @classmethod
+-    def risks_must_be_descriptive(cls, risks: list) -> list:
+-        """Guardrail: cada risco deve conter pelo menos 10 palavras.
+-
+-        Entradas curtas como 'Security risk' ou 'Performance issue' são vagas
+-        demais para serem acionáveis e provavelmente indicam respostas alucinadas.
+-        """
+-        for risk in risks:
+-            word_count = len(str(risk).split())
+-            if word_count < _MIN_RISK_WORDS:
+-                raise ValueError(
+-                    f"Architectural risk is too vague ({word_count} words). "
+-                    f"Each risk must have at least {_MIN_RISK_WORDS} words "
+-                    f"to be considered actionable. Got: {risk!r}"
+-                )
+-        return risks
+-
+-    @field_validator("identified_components", mode="before")
++    def components_must_be_technical(cls, name: str) -> str:
++        """Componentes não devem ser nomes genéricos de formas."""
++        if name.strip().lower() in _GENERIC_COMPONENT_TERMS:
++            raise ValueError(
++                f"Nome de componente '{name}' é genérico demais. "
++                "Use termos técnicos específicos (ex: 'API Gateway', 'PostgreSQL')."
++            )
++        return name
++
++class ArchitecturalRisk(BaseModel):
++    risk: str
++    severity: Literal["Critical", "High", "Medium", "Low"]
++    impact: str
++    affected_components: list[str]
++
++    @field_validator("risk")
+     @classmethod
+-    def components_must_be_technical(cls, components: list) -> list:
+-        """Guardrail: componentes identificados não devem ser nomes genéricos de formas.
+-
+-        Termos como 'box' ou 'arrow' indicam que o LLM descreveu os elementos visuais
+-        do diagrama em vez dos componentes arquiteturais reais.
+-        """
+-        for component in components:
+-            normalized = str(component).strip().lower()
+-            if normalized in _GENERIC_COMPONENT_TERMS:
+-                raise ValueError(
+-                    f"Component name {component!r} is too generic. "
+-                    "Use specific technical terms (e.g. 'API Gateway', "
+-                    "'Load Balancer', 'PostgreSQL Database')."
+-                )
+-        return components
++    def risks_must_be_descriptive(cls, risk: str) -> str:
++        """O título do risco deve ser minimamente descritivo."""
++        if len(risk.split()) < _MIN_RISK_WORDS:
++            raise ValueError(
++                f"O risco '{risk}' é muito vago. Deve ter pelo menos {_MIN_RISK_WORDS} palavras."
++            )
++        return risk
++
++class Recommendation(BaseModel):
++    action: str
++    mitigates_risk: str
++
++
++class AIAnalysisOutput(BaseModel):
++    """Esquema de saída estruturada para a análise da arquitetura."""
++    model_config = ConfigDict(frozen=True)
++
++    identified_components: list[IdentifiedComponent]
++    architectural_risks: list[ArchitecturalRisk]
++    recommendations: list[Recommendation]
++    uncertainties: list[str] = []
++
++
++class SecurityAnalysisOutput(BaseModel):
++    """Esquema de saída para a análise de segurança."""
++    security_recommendations: list[str]
+diff --git a/app/infrastructure/ai_client.py b/app/infrastructure/ai_client.py
+index 8c16adf..e0569ac 100644
+--- a/app/infrastructure/ai_client.py
++++ b/app/infrastructure/ai_client.py
+@@ -1,113 +1,137 @@
+ from __future__ import annotations
+-
+ import base64
+ import os
+-
++from typing import Literal
++import litellm
+ from dotenv import load_dotenv
+-from google import genai
+-from google.genai import errors as genai_errors
+-from google.genai import types
+-from pydantic import ValidationError
+-
+-from app.domain.schemas import AIAnalysisOutput
+-
+-load_dotenv()  # rede de segurança: garante que o .env seja carregado independentemente do ponto de entrada
+-
+-_SYSTEM_PROMPT = (
+-    "You are a Senior Software Architect and Architecture Auditor. "
+-    "Analyze the architecture diagram provided in the image and extract:\n"
+-    "1. **identified_components** — list of all components, "
+-    "services, and resources visible in the diagram.\n"
+-    "2. **architectural_risks** — list of risks, resilience failures, "
+-    "single points of failure, and security issues identified "
+-    "(each item with a maximum of 300 characters).\n"
+-    "3. **recommendations** — list of concrete actions to mitigate "
+-    "the identified risks.\n"
+-    "Respond EXCLUSIVELY in the requested JSON format."
+-)
+-
+-_PRIMARY_MODEL = "gemini-2.5-flash"
+-_FALLBACK_MODEL = "gemini-1.5-flash-8b"
+-# Códigos HTTP que acionam o fallback automático de modelo (sobrecarga, erro de servidor, rate limit, timeout).
+-_FALLBACK_ON_CODES = frozenset({429, 500, 503, 504})
+-_MAX_RETRIES = 2
+-
+-
+-class GeminiClient:
+-    """Encapsula a chamada à Gemini Vision via google-genai com saídas estruturadas nativas."""
+-
+-    def __init__(self, model_name: str = _PRIMARY_MODEL) -> None:
+-        api_key = os.environ.get("GEMINI_API_KEY", "")
+-        if not api_key:
+-            raise ValueError(
+-                "The GEMINI_API_KEY environment variable is not set. "
+-                "Add it to your .env file or export it before running."
+-            )
+-        self._model_name = model_name
+-        self._client = genai.Client(api_key=api_key)
++from app.core.logging import get_logger
++from app.domain.schemas import AIAnalysisOutput, SecurityAnalysisOutput
++
++load_dotenv()
++log = get_logger(__name__)
++
++_SYSTEM_PROMPT = """## ROLE
++You are a Senior Software Architect and Cloud Infrastructure Auditor. Your task is to perform a rigorous structural and security audit of the provided architecture diagram.
++
++## TASK
++1. VISUAL CATALOGING: Identify every node, service, database, and networking boundary explicitly labeled or iconographically recognizable.
++2. RISK ANALYSIS: Identify Single Points of Failure (SPOF), security vulnerabilities (e.g., exposed databases), resilience gaps, and scalability bottlenecks.
++3. MITIGATION: Provide actionable recommendations based on Well-Architected Frameworks.
++
++## CONSTRAINTS
++- Output MUST be a valid JSON object.
++- Be precise: Reference specific component names in your risk analysis.
++- If an element is blurry or its function is unclear, list it under "uncertainties" rather than guessing.
++- Keep descriptions concise, technical, and objective.
++
++## OUTPUT FORMAT
++{
++  "identified_components": [
++    {
++      "id": "c1",
++      "name": "Component Name",
++      "type": "Service/Resource Type",
++      "function": "Brief technical purpose"
++    }
++  ],
++  "architectural_risks": [
++    {
++      "risk": "Technical title",
++      "severity": "Critical/High/Medium/Low",
++      "impact": "What happens if this fails (concise)",
++      "affected_components": ["c1"]
++    }
++  ],
++  "recommendations": [
++    {
++      "action": "Concrete mitigation step",
++      "mitigates_risk": "Reference the risk title"
++    }
++  ],
++  "uncertainties": ["List any ambiguous or unidentifiable elements"]
++}
++"""
++
++_SECURITY_SYSTEM_PROMPT = """## ROLE
++You are a Senior Security Analyst. Your task is to perform a security audit of the provided architecture diagram.
++
++## TASK
++1. Analyze the provided architecture diagram for security vulnerabilities.
++2. Provide a list of security recommendations as bullet points.
++
++## CONSTRAINTS
++- Output MUST be a valid JSON object.
++- Provide at least 3 security recommendations.
++- Each recommendation should be a clear and actionable bullet point.
++
++## OUTPUT FORMAT
++{
++  "security_recommendations": [
++    "Bullet point 1",
++    "Bullet point 2",
++    "Bullet point 3"
++  ]
++}
++"""
++
++SUPPORTED_MODELS = {
++    "gemini": "gemini/gemini-1.5-flash",
++    "bedrock": "bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
++}
++
++class AIClient:
++    """Cliente agnóstico de provedor de IA, usando LiteLLM para análise de imagens."""
++
++    def __init__(self, model_id: Literal["gemini", "bedrock"] = "gemini") -> None:
++        self.model_name = SUPPORTED_MODELS.get(model_id)
++        if not self.model_name:
++            raise ValueError(f"Modelo '{model_id}' não é suportado.")
++
++        if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
++            raise ValueError("A variável de ambiente GEMINI_API_KEY não foi definida.")
++        if "bedrock" in self.model_name and not (
++            os.environ.get("AWS_ACCESS_KEY_ID") and
++            os.environ.get("AWS_SECRET_ACCESS_KEY") and
++            os.environ.get("AWS_REGION_NAME")
++        ):
++            raise ValueError("As variáveis de ambiente da AWS para o Bedrock não foram definidas.")
++
++    async def _analyze(self, base64_str: str, system_prompt: str, output_schema: BaseModel) -> BaseModel:
++        """Envia a imagem para o modelo de IA e retorna a análise estruturada."""
++
++        messages = [
++            {
++                "role": "user",
++                "content": [
++                    {"type": "text", "text": system_prompt},
++                    {
++                        "type": "image_url",
++                        "image_url": {
++                            "url": f"data:image/jpeg;base64,{base64_str}"
++                        },
++                    },
++                ],
++            }
++        ]
+ 
+-    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
+-        """Envia a imagem (base64) ao Gemini Vision e retorna a análise estruturada.
++        try:
++            log.info(f"Chamando API via LiteLLM com o modelo: {self.model_name}")
++            response = await litellm.acompletion(
++                model=self.model_name,
++                messages=messages,
++                response_format={"type": "json_object"},
++            )
++            
++            response_content = response.choices[0].message.content
++            
++            return output_schema.model_validate_json(response_content)
+ 
+-        Tenta até _MAX_RETRIES vezes quando a validação Pydantic falha para que o
+-        modelo possa se autocorrigir. Faz fallback automático para _FALLBACK_MODEL
+-        quando o modelo principal retorna erro retriável (429, 500, 503, 504).
+-        """
+-        image_bytes = base64.b64decode(base64_str)
++        except Exception as e:
++            log.error(f"Erro na chamada LiteLLM: {e}", exc_info=True)
++            raise
+ 
+-        contents = [
+-            types.Part.from_text(text=_SYSTEM_PROMPT),
+-            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+-        ]
++    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
++        return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)
+ 
+-        for model in (self._model_name, _FALLBACK_MODEL):
+-            print(f"--- CHAMANDO GEMINI API ({model}) ---")  # noqa: T201
+-            try:
+-                return self._call_with_guardrail_retries(model, contents)
+-            except (genai_errors.ServerError, genai_errors.ClientError) as exc:
+-                if exc.code in _FALLBACK_ON_CODES and model != _FALLBACK_MODEL:
+-                    print(  # noqa: T201
+-                        f"--- {model} falhou (HTTP {exc.code}), "
+-                        f"usando modelo fallback {_FALLBACK_MODEL} ---"
+-                    )
+-                    continue
+-                raise
+-
+-        raise RuntimeError("All models unavailable")  # inalcançável, mas necessário para satisfazer o verificador de tipos
+-
+-    def _call_with_guardrail_retries(
+-        self, model: str, contents: list[types.Part]
+-    ) -> AIAnalysisOutput:
+-        """Chama o modelo e tenta novamente até _MAX_RETRIES vezes quando a validação Pydantic falha."""
+-        last_error: Exception | None = None
+-        retry_contents = list(contents)
+-
+-        for attempt in range(1, _MAX_RETRIES + 2):  # +2 = 1 tentativa inicial + número de retentativas
+-            response = self._client.models.generate_content(
+-                model=model,
+-                contents=retry_contents,
+-                config=types.GenerateContentConfig(
+-                    response_mime_type="application/json",
+-                    response_schema=AIAnalysisOutput,
+-                ),
+-            )
+-            try:
+-                return AIAnalysisOutput.model_validate_json(response.text)
+-            except ValidationError as exc:
+-                last_error = exc
+-                if attempt <= _MAX_RETRIES:
+-                    print(  # noqa: T201
+-                        f"--- GUARDRAIL FALHOU (tentativa {attempt}) — "
+-                        f"reenviando ao modelo ---"
+-                    )
+-                    retry_contents.append(
+-                        types.Part.from_text(
+-                            text=(
+-                                f"Your previous response failed validation: {exc}. "
+-                                "Please fix the issues and respond again in the "
+-                                "exact JSON format requested."
+-                            )
+-                        )
+-                    )
+-
+-        raise last_error  # type: ignore[misc]
++    async def analyze_security(self, base64_str: str) -> SecurityAnalysisOutput:
++        return await self._analyze(base64_str, _SECURITY_SYSTEM_PROMPT, SecurityAnalysisOutput)
+diff --git a/app/infrastructure/pdf_processor.py b/app/infrastructure/pdf_processor.py
+new file mode 100644
+index 0000000..17de8bf
+--- /dev/null
++++ b/app/infrastructure/pdf_processor.py
+@@ -0,0 +1,43 @@
++from __future__ import annotations
++
++import base64
++
++import fitz
++
++def extract_text_and_images_from_pdf(
++    pdf_path: str,
++) -> list[str | bytes]:
++    """Extrai texto e imagens de um arquivo PDF."""
++    with fitz.open(pdf_path) as doc:
++        content = []
++        for page in doc:
++            content.append(page.get_text())
++            for img in page.get_images(full=True):
++                xref = img[0]
++                base_image = doc.extract_image(xref)
++                image_bytes = base_image["image"]
++                content.append(image_bytes)
++    return content
++
++
++def process_pdf_and_encode_images(pdf_path: str) -> tuple[str, list[str]]:
++    """
++    Processa um PDF, extrai texto e converte imagens para base64.
++
++    Retorna uma tupla com o texto extraído e uma lista de imagens em base64.
++    """
++    with fitz.open(pdf_path) as doc:
++        full_text = []
++        base64_images = []
++
++        for page in doc:
++            full_text.append(page.get_text())
++
++            for img_index, img in enumerate(page.get_images(full=True)):
++                xref = img[0]
++                base_image = doc.extract_image(xref)
++                image_bytes = base_image["image"]
++                encoded_image = base64.b64encode(image_bytes).decode("utf-8")
++                base64_images.append(encoded_image)
++
++    return "\n".join(full_text), base64_images
+diff --git a/app/mcp/__init__.py b/app/mcp/__init__.py
+new file mode 100644
+index 0000000..3ea4a79
+--- /dev/null
++++ b/app/mcp/__init__.py
+@@ -0,0 +1,3 @@
++from app.mcp.server import mcp
++
++__all__ = ["mcp"]
+\ No newline at end of file
+diff --git a/app/usecases/analyze_diagram.py b/app/usecases/analyze_diagram.py
+index 4b94de8..70b6c8e 100644
+--- a/app/usecases/analyze_diagram.py
++++ b/app/usecases/analyze_diagram.py
+@@ -1,23 +1,37 @@
+ from __future__ import annotations
+-
++from __future__ import annotations
++import tempfile
+ from app.domain.repositories import OutputRepository
+ from app.domain.schemas import AIAnalysisOutput, DiagramInput
+-from app.infrastructure.ai_client import GeminiClient
+-
++from app.infrastructure.ai_client import AIClient
++from app.infrastructure.pdf_processor import process_pdf_and_encode_images
++import base64
+ 
+ class AnalyzeDiagramUseCase:
+     """Orquestra a análise de um diagrama arquitetural via IA.
+-
+-    Recebe o cliente de IA e o repositório de saída por injeção de dependência,
+-    mantendo o caso de uso desacoplado da camada de infraestrutura.
+     """
+ 
+-    def __init__(self, ai_client: GeminiClient, repository: OutputRepository) -> None:
++    def __init__(self, ai_client: AIClient, repository: OutputRepository) -> None:
+         self._ai_client = ai_client
+         self._repository = repository
+ 
+     async def execute(self, input_data: DiagramInput) -> AIAnalysisOutput:
+-        """Envia o diagrama ao cliente de IA, persiste o resultado e o retorna."""
+-        result = await self._ai_client.analyze_image(input_data.image_base64)
++        """
++        Processa o arquivo (imagem ou PDF), envia para análise e salva o resultado.
++        """
++        if input_data.file_path.endswith(".pdf"):
++            pdf_content = base64.b64decode(input_data.image_base64)
++            with tempfile.NamedTemporaryFile(suffix=".pdf") as temp_pdf:
++                temp_pdf.write(pdf_content)
++                temp_pdf.seek(0)
++                _, base64_images = process_pdf_and_encode_images(temp_pdf.name)
++            
++            if not base64_images:
++                raise ValueError("Nenhuma imagem encontrada no PDF.")
++            image_base64 = base64_images[0]
++        else:
++            image_base64 = input_data.image_base64
++
++        result = await self._ai_client.analyze_image(image_base64)
+         await self._repository.save(result)
+         return result
+diff --git a/app/usecases/security_analysis.py b/app/usecases/security_analysis.py
+new file mode 100644
+index 0000000..ee63538
+--- /dev/null
++++ b/app/usecases/security_analysis.py
+@@ -0,0 +1,36 @@
++from __future__ import annotations
++from app.domain.repositories import OutputRepository
++from app.domain.schemas import SecurityAnalysisOutput, DiagramInput
++from app.infrastructure.ai_client import AIClient
++import base64
++from app.infrastructure.pdf_processor import process_pdf_and_encode_images
++
++class SecurityAnalysisUseCase:
++    """Orquestra a análise de segurança de um diagrama arquitetural via IA."""
++
++    def __init__(self, ai_client: AIClient, repository: OutputRepository) -> None:
++        self._ai_client = ai_client
++        self._repository = repository
++
++    async def execute(self, input_data: DiagramInput) -> SecurityAnalysisOutput:
++        """
++        Processa o arquivo (imagem ou PDF), envia para análise de segurança e salva o resultado.
++        """
++        if input_data.file_path.endswith(".pdf"):
++            pdf_content = base64.b64decode(input_data.image_base64)
++            temp_pdf_path = "temp.pdf"
++            with open(temp_pdf_path, "wb") as f:
++                f.write(pdf_content)
++
++            _, base64_images = process_pdf_and_encode_images(temp_pdf_path)
++            
++            if not base64_images:
++                raise ValueError("Nenhuma imagem encontrada no PDF.")
++            image_base64 = base64_images[0]
++        else:
++            image_base64 = input_data.image_base64
++
++        result = await self._ai_client.analyze_security(image_base64)
++        # O repositório pode precisar ser adaptado para salvar diferentes tipos de output
++        # await self._repository.save(result) 
++        return result
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..a71cbb3
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,21 @@
++version: '3.8'
++
++services:
++  app:
++    build: .
++    ports:
++      - "8000:8000"
++    environment:
++      - REDIS_HOST=redis
++      - REDIS_PORT=6379
++      - GEMINI_API_KEY=${GEMINI_API_KEY}
++      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
++      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
++      - AWS_REGION_NAME=${AWS_REGION_NAME}
++    depends_on:
++      - redis
++
++  redis:
++    image: "redis:alpine"
++    ports:
++      - "6379:6379"
+diff --git a/path/to/filename.js b/path/to/filename.js
+deleted file mode 100644
+index 7435937..0000000
+--- a/path/to/filename.js
++++ /dev/null
+@@ -1,2 +0,0 @@
+-// entire file content ...
+-// ... goes in between
+diff --git a/requirements.txt b/requirements.txt
+index bb6ea94..28c8510 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,4 +1,9 @@
+ fastapi[standard]>=0.115.0
+ uvicorn[standard]>=0.29.0
+ pydantic>=2.7.0
+-google-genai>=0.8.0
++PyMuPDF>=1.24.0
++python-dotenv>=1.0.0
++litellm>=1.15.0
++boto3>=1.34.0
++python-json-logger>=2.0.7
++redis>=5.0.0
