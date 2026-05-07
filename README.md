@@ -1,7 +1,7 @@
-﻿# IADT — AI Architecture Diagram Analyzer
+# IADT — AI Architecture Diagram Analyzer
 
-Microsserviço de análise automatizada de diagramas arquiteturais via IA Generativa,  
-desenvolvido para o desafio **FIAP Secure Systems** (Hackathon IADT).
+Microsserviço de análise automatizada de diagramas arquiteturais via IA Generativa,
+relacionado à aplicação prática com o Frameworke socio-orientado de TI (F.S.O.)
 
 > **Convenção de código:** todo o código-fonte está em **Inglês**; comentários, docstrings e esta documentação estão em **Português (pt-BR)**.
 
@@ -103,142 +103,185 @@ O schema `AIAnalysisOutput` age como uma **barreira de contrato** entre o LLM e 
 class AIAnalysisOutput(BaseModel):
     model_config = ConfigDict(frozen=True)           # imutável após criação
 
-    identified_components: list[str]
-    architectural_risks: list[Annotated[str, Field(max_length=300)]]
-    recommendations: list[str]
+    identified_components: list[IdentifiedComponent]
+    architectural_risks: list[ArchitecturalRisk]
+    recommendations: list[Recommendation]
 ```
 
 Dois `@field_validator` aplicam regras semânticas:
 
 | Guardrail                    | Regra                                                                                           | Exemplo de rejeição          |
 |------------------------------|-------------------------------------------------------------------------------------------------|------------------------------|
-| `risks_must_be_descriptive`  | Cada risco deve ter **mínimo de 10 palavras** — evita respostas vagas/alucinadas                | `"Security risk."` ❌        |
-| `components_must_be_technical` | Nomes genéricos de formas visuais (`box`, `arrow`, `shape`) são rejeitados                   | `["box", "arrow"]` ❌        |
+| `risks_must_be_descriptive`  | Cada risco deve ter **mínimo de 5 palavras** — evita respostas vagas/alucinadas                | "Security risk." (2 palavras)
+| `recommendations_must_be_simple` | As recomendações devem conter no mínimo 5 palavras                                          | "Fix security." (2 palavras)
+| `too_generic_components`     | Componentes não devem ser genéricos como "box", "arrow", "circle", "text"                  | "box", "arrow"
 
-### 4.2 Controles de Segurança Gerais
+### 4.2 Validação de Modelos
 
-| Vetor de Risco                          | Controle Implementado                                                                  |
-|-----------------------------------------|----------------------------------------------------------------------------------------|
-| Payload sem `image_base64`              | FastAPI retorna HTTP 422 automaticamente via validação Pydantic da entrada             |
-| Prompt injection via conteúdo da imagem | O prompt enviado ao Gemini é **fixo e controlado pelo sistema** — não interpolado      |
-| Resposta do LLM fora do schema          | `AIAnalysisOutput.model_validate_json()` rejeita e dispara o loop de autocorreção     |
-| Campos extras injetados pelo LLM        | Pydantic v2 ignora campos extras não declarados no schema por padrão                  |
-| Chave de API ausente                    | `GeminiClient.__init__` levanta `ValueError` → rota converte em HTTP 500 descritivo   |
-| `frozen=True` no schema de saída        | O objeto de análise não pode ser mutado após validação                                 |
+O schema valida o modelo de entrada com os parâmetros específicos:
 
----
+- **Modelo principal:** `anthropic.claude-3-sonnet-20240229-v1` (pode ser alterado via ambiente)
+- **Modelo fallback:** `anthropic.claude-3-haiku-20240307` (pode ser alterado via ambiente)
 
-## 5. Guia Rápido de Execução
-
-### Pré-requisitos
-
-- Python 3.11+
-- Chave de API do Google Gemini (`GEMINI_API_KEY`)
-
-### Instalação
-
-```bash
-# Criar e ativar ambiente virtual
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/macOS
-
-# Instalar dependências de produção
-pip install -r requirements.txt
-
-# Instalar dependências de desenvolvimento (testes)
-pip install -r requirements-dev.txt
-```
-
-### Configuração do `.env`
-
-Crie um arquivo `.env` na raiz do projeto:
-
-```env
-GEMINI_API_KEY=sua_chave_aqui
-```
-
-> A chave é carregada pelo `python-dotenv` em `app/main.py` antes de qualquer módulo ser importado.
-
-### Iniciar o Servidor
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Documentação interativa disponível em:
-- **Swagger UI:** `http://localhost:8000/docs`
-- **ReDoc:** `http://localhost:8000/redoc`
+Até 2 tentativas por modelo antes de propagar o erro.
 
 ---
 
-## 6. Testes
+## 5. Execução Local com Docker
 
-### Executar a Suíte Completa
+Para executar o projeto localmente com Docker, siga estas etapas:
 
-```bash
-# Todos os testes (pula o teste de integração real se não houver chave)
-python -m pytest tests/ -v
-```
+1. **Configurando o ambiente**
 
-### Executar apenas testes unitários (sem chamada real à API)
+   - Crie um arquivo `.env` com suas credenciais:
 
-```bash
-python -m pytest tests/ -v -k "not usecase_returns_expected"
-```
+     ```bash
+     mv .env.example .env
+     ```
 
-### Cobertura de Testes
+     Edite o `.env` com suas chaves de API reais:
 
-| Teste                                              | Tipo        | O que garante                                                    |
-|----------------------------------------------------|-------------|------------------------------------------------------------------|
-| `test_analyze_diagram_returns_200_and_correct_schema` | Integração | HTTP 200 + presença das 3 chaves do contrato                  |
-| `test_analyze_diagram_fields_are_lists`            | Integração  | Tipos dos campos de saída (sempre `list`, nunca `str`)          |
-| `test_analyze_diagram_missing_image_base64_returns_422` | Integração | Rejeição de payload inválido na fronteira HTTP               |
-| `test_analyze_diagram_accepts_optional_url`        | Integração  | Campo `url` opcional não quebra o pipeline                      |
-| `test_analyze_diagram_returns_503_when_ai_unavailable` | Integração | ServerError da API → HTTP 503 semântico para o cliente      |
-| `test_usecase_calls_repository_save`               | Unitário    | `repository.save()` é chamado exatamente uma vez com o resultado|
-| `test_file_repository_saves_json`                  | Unitário    | `FileOutputRepository` cria arquivo JSON no diretório correto   |
-| `test_aianalysisoutput_rejects_vague_risk`         | Guardrail   | Risco com < 10 palavras dispara `ValidationError`               |
-| `test_aianalysisoutput_rejects_generic_component`  | Guardrail   | Componente genérico (`box`, `arrow`) dispara `ValidationError`  |
-| `test_gemini_client_falls_back_on_retriable_error` | Resiliência | Fallback automático de `gemini-2.5-flash` para `gemini-1.5-flash-8b` em erros 503 |
-| `test_analyze_diagram_usecase_returns_expected_output` | Integração real | Chamada real ao Gemini + guardrails aplicados *(requer `GEMINI_API_KEY`)* |
+     ```bash
+     GEMINI_API_KEY=your-gemini-api-key
+     AWS_ACCESS_KEY_ID=your-aws-access-key-id
+     AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+     AWS_REGION=us-east-1
+     ```
+
+2. **Construindo e executando com Docker Compose**
+
+   ```bash
+   # Construir e iniciar os contêineres
+   docker-compose up --build
+    
+   # Para rodar em modo daemon (em segundo plano)
+   docker-compose up -d
+   ```
+
+3. **Acessando a API**
+
+   - A API está acessível em `http://localhost:8000`
+   - Documentação interativa (Swagger UI): `http://localhost:8000/docs`
+   - API docs (Redoc): `http://localhost:8000/redoc`
+
+4. **Parando os contêineres**
+
+   ```bash
+   docker-compose down
+   ```
+
+5. **Executando testes**
+
+   ```bash
+   # Simular com o teste de requisitos
+   docker-compose exec app python -m pytest
+   ```
+
+6. **Limpando recursos**
+
+   ```bash
+   # Parar e remover contêineres
+   docker-compose down --volumes
+   
+   # Remover a imagem construída
+   docker image rm iadt-app:latest
+   ```
 
 ---
 
-## 7. Simulador SOAT
+## 7. Infraestrutura (Terraform)
 
-O `simulador_soat.py` simula o cliente externo da equipe SOAT consumindo a API de ponta a ponta.
+O projeto inclui arquivos Terraform para provisionar automaticamente o usuário IAM com as permissões necessárias para o Amazon Bedrock.
 
-### Pré-requisito
+### 7.1 Provisionamento
 
-Servidor rodando em `http://localhost:8000` (ver seção 5).
+1.  Navegue até a pasta terraform:
+    ```bash
+    cd terraform
+    ```
+2.  Inicialize o Terraform:
+    ```bash
+    terraform init
+    ```
+3.  Aplique a configuração:
+    ```bash
+    terraform apply
+    ```
 
-### Executar com o diagrama padrão (`architecture.png`)
+### 7.2 Obtendo as Credenciais (Secrets)
 
-```bash
-python simulador_soat.py
-```
+Como as chaves de acesso são informações sensíveis, elas são marcadas como `sensitive` no Terraform. Para visualizá-las e configurar seu arquivo `.env`, utilize os seguintes comandos:
 
-### Executar com uma imagem customizada
+-   **AWS Access Key ID:**
+    ```bash
+    terraform output -raw access_key_id
+    ```
+-   **AWS Secret Access Key:**
+    ```bash
+    terraform output -raw secret_access_key
+    ```
+-   **Região AWS:**
+    ```bash
+    terraform output -raw region
+    ```
 
-```bash
-python simulador_soat.py caminho/para/diagrama.png
-```
-
-O simulador imprime o resultado completo formatado no terminal e exibe um resumo com a contagem de componentes, riscos e recomendações identificados.
+Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
 
 ---
 
-## 8. Stack de Tecnologias
+## 9. Uso como MCP Server (VS Code / Claude Desktop)
 
-| Tecnologia          | Versão mínima | Papel                                                    |
-|---------------------|---------------|----------------------------------------------------------|
-| `fastapi[standard]` | 0.115.0       | Framework HTTP ASGI com validação automática             |
-| `uvicorn[standard]` | 0.29.0        | Servidor ASGI                                            |
-| `pydantic`          | 2.7.0         | Validação de dados, guardrails semânticos e contratos    |
-| `google-genai`      | 0.8.0         | SDK nativo do Google Gemini (structured outputs nativos) |
-| `python-dotenv`     | 1.0.0         | Carregamento do `.env` com `GEMINI_API_KEY`              |
-| `httpx`             | 0.27.0        | Cliente HTTP assíncrono (simulador SOAT + testes)        |
-| `pytest`            | 8.2.0         | Framework de testes                                      |
-| `pytest-asyncio`    | 0.23.0        | Suporte a testes assíncronos (`asyncio: mode=auto`)      |
+Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs como o Claude (no Desktop ou via extensões no VS Code) utilizem as ferramentas de análise de diagrama diretamente.
 
+### 9.1 Configuração no VS Code (extensão Cline / Roo Code)
+
+Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, você pode conectar o servidor MCP diretamente via HTTP:
+
+```json
+{
+  "mcpServers": {
+    "diagram-analyzer": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+### 9.2 Configuração no Claude Desktop
+
+Para usar com o aplicativo Claude Desktop, a configuração também é feita via URL, sem necessidade de rodar scripts locais ou configurar segredos no cliente:
+
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "diagram-analyzer": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+### 9.3 Ferramentas Disponíveis
+
+Uma vez configurado, a IA terá acesso às seguintes ferramentas:
+- `analyze_diagram`: Analisa componentes e riscos de um arquivo local ou base64.
+- `analyze_security`: Foca especificamente em vulnerabilidades de segurança.
+
+---
+
+## 10. Tudo pronto! Bora usar o sistema
+
+O sistema está pronto para análise de diagramas arquiteturais!
+
+Faça um pedido POST para `http://localhost:8000/analyze-diagram` com o corpo JSON:
+
+```json
+{
+  "image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR42mWQMQ7AIAwEwD/gwqJTcWKP1P83s62FI7HUWhtpsA8ec57khkQG0RAbCME4JV6n48u/PDwAQIi3ZoQeW7k+i4j13AAAAABJRU5ErkJggg=="
+}
+```
+
+Veja os outputs validados na resposta e os arquivos JSON salvos em `data/outputs/`.

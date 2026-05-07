@@ -1,21 +1,39 @@
+# Docker Compose file for IADT
 version: '3.8'
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION_NAME=${AWS_REGION_NAME}
+      - AWS_REGION=${AWS_REGION}
+    volumes:
+      - ./data:/app/data
     depends_on:
       - redis
+    restart: unless-stopped
 
   redis:
-    image: "redis:alpine"
+    image: redis:7.0
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+    driver: local
+
+# Environment file for local development
+# .env file should contain:
+# GEMINI_API_KEY=your-api-key
+# AWS_ACCESS_KEY_ID=your-aws-access-key
+# AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+# AWS_REGION=us-east-1
