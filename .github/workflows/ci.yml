@@ -39,3 +39,17 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t hackaton-iadt:latest .
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image to ghcr.io
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/hackaton-iadt:latest
+          docker tag hackaton-iadt:latest $IMAGE
+          docker push $IMAGE
+

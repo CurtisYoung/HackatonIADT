@@ -1,25 +1,63 @@
 from __future__ import annotations
 
+import uuid
+from typing import Callable
+
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.core.logging import get_logger
 
 load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
 
 from app.api.routes import router  # noqa: E402
 from app.mcp.server import mcp
 
+log = get_logger(__name__)
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    """Middleware que gera um ``X-Request-ID`` único para cada requisição e o inclui nos logs."""
+
+    async def dispatch(self, request: Request, call_next: Callable):
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        # Injeta no contexto do logger
+        log = get_logger(__name__, extra={"request_id": request_id})
+        request.state.request_id = request_id
+        log.info(f"Incoming {request.method} {request.url.path}")
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
 app = FastAPI(
     title="IADT - FIAP Secure Systems",
     description=(
         "API especializada na análise arquitetural de diagramas na nuvem, "
         "utilizando Gemini Vision com mitigação de alucinações (Guardrails) "
-        "e Fallback automático."
+        "e fallback automático."
     ),
     version="1.0.0",
-    contact={
-        "name": "Equipe de Arquitetura",
-    },
+    contact={"name": "Equipe de Arquitetura"},
 )
+
+# CORS para desenvolvimento (permite todas origens)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Middleware de correlação de request ID
+app.add_middleware(CorrelationIdMiddleware)
+
+# Endpoint rápido para desenvolvedores
+@app.get("/dev/info", tags=["Developer"], summary="Informações de desenvolvimento")
+async def dev_info():
+    """Retorna informações úteis ao desenvolvedor sem expor segredos."""
+    from app.core.version import __version__  # Supondo que exista
+    return {"app_version": __version__, "environment": "development"}
 
 app.include_router(router)
 app.mount("/mcp", mcp.streamable_http_app())
