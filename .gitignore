@@ -10,3 +10,14 @@ dist/
 build/
 *.egg-info/
 data/outputs/*.json
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+terraform.tfvars
+terraform.tfvars.json
+.terraform.tfstate.lock.info
+crash.log

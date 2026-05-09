@@ -6,6 +6,7 @@ from fastapi import FastAPI
 load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
 
 from app.api.routes import router  # noqa: E402
+from app.mcp.server import mcp
 
 app = FastAPI(
     title="IADT - FIAP Secure Systems",
@@ -21,3 +22,4 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.mount("/mcp", mcp.streamable_http_app())
