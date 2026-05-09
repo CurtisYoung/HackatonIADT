@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hackaton-iadt-service
+  labels:
+    app: hackaton-iadt
+spec:
+  selector:
+    app: hackaton-iadt
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
