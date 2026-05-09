@@ -110,6 +110,29 @@ async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, re
         task_data = {"status": "failed", "error": str(e)}
         redis_client.set(task_id, json.dumps(task_data))
 
+ @router.post(
+    "/analyze/diagram/async",
+    response_model=TaskStatus,
+    summary="Inicia a análise de um diagrama de forma assíncrona",
+    status_code=202,
+)
+async def analyze_diagram_async(
+    input_data: DiagramInput,
+    background_tasks: BackgroundTasks,
+    redis_client: redis.Redis = Depends(_get_redis),
+) -> TaskStatus:
+    """
+    Recebe um diagrama, inicia a análise em background e retorna um ID de tarefa.
+    """
+    task_id = str(uuid.uuid4())
+    task_data = {"status": "processing"}
+    redis_client.set(task_id, json.dumps(task_data))
+
+    background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
+
+    return TaskStatus(task_id=task_id, status="processing")
+
+
 @router.post(
     "/analyze/security/sync",
     response_model=SecurityAnalysisOutput,
