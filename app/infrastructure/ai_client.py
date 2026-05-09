@@ -87,9 +87,8 @@ SUPPORTED_MODELS = {
 }
 
 class AIClient:
-    """Cliente agnóstico de provedor de IA, usando LiteLLM para análise de imagens.
-    Implementa loop de re‑ask (auto‑correção) e fallback entre provedores.
-    """
+    """Cliente de provedor de IA com suporte a fallback e re‑ask."""
+
 
     def __init__(self, model_id: Literal["gemini", "bedrock"] = "gemini") -> None:
         # Guardar a chave do modelo para poder fazer fallback

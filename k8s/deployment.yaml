@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hackaton-iadt-deployment
+  namespace: iadt
   labels:
     app: hackaton-iadt
 spec:
@@ -45,6 +46,7 @@ spec:
                 secretKeyRef:
                   name: iadt-secrets
                   key: api_key
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
           readinessProbe:
             httpGet:
               path: /health
@@ -58,3 +60,5 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
       restartPolicy: Always
+
+
