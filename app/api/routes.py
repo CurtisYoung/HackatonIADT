@@ -39,7 +39,25 @@ async def health_check() -> dict:
         redis_status = "unavailable"
     return {"status": "ok", "redis": redis_status}
 
+@router.post(
+    "/analyze/diagram/async",
+    response_model=TaskStatus,
+    summary="Inicia a análise de um diagrama de forma assíncrona",
+    status_code=202,
+)
+async def analyze_diagram_async(
+    input_data: DiagramInput,
+    background_tasks: BackgroundTasks,
+    redis_client: redis.Redis = Depends(_get_redis),
+) -> TaskStatus:
+    """Recebe um diagrama, inicia a análise em background e retorna um ID de tarefa."""
+    task_id = str(uuid.uuid4())
+    redis_client.set(task_id, json.dumps({"status": "processing"}))
+    background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
+    return TaskStatus(task_id=task_id, status="processing")
+
 # ---------- Dependências ----------
+
 
 def _get_redis() -> redis.Redis:
     return get_redis_client()
