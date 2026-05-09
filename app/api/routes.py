@@ -2,7 +2,8 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, AsyncGenerator
+
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from pydantic import ValidationError
@@ -109,4 +110,23 @@ async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, re
         task_data = {"status": "failed", "error": str(e)}
         redis_client.set(task_id, json.dumps(task_data))
 
-# (rest of the file unchanged) ...
+@router.post(
+    "/analyze/security/sync",
+    response_model=SecurityAnalysisOutput,
+    summary="Executa a análise de segurança de forma síncrona",
+)
+async def analyze_security_sync(
+    input_data: DiagramInput,
+    use_case: SecurityAnalysisUseCase = Depends(_get_security_use_case),
+) -> SecurityAnalysisOutput:
+    """Endpoint síncrono para análise de segurança."""
+    try:
+        return await use_case.execute(input_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
+        if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
+            status_code = 500
+        raise HTTPException(status_code=status_code, detail=f"Erro na análise: {exc}")
+
