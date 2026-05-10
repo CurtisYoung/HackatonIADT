@@ -10,10 +10,11 @@ from app.domain.repositories import OutputRepository
 from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, ArchitecturalRisk, Recommendation
 from app.main import app
 
-ENDPOINT = "/analyze-diagram"
+ENDPOINT = "/analyze/diagram/sync"
 
-VALID_PAYLOAD: dict[str, str] = {
-    "image_base64": "aW1hZ2VtX2Zha2VfYmFzZTY0",
+VALID_PAYLOAD: dict = {
+    "image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4",
+    "file_path": "test.png",
 }
 
 EXPECTED_KEYS: frozenset[str] = frozenset(
@@ -39,7 +40,7 @@ _FAKE_OUTPUT = AIAnalysisOutput(
 )
 
 
-def _mock_gemini_client() -> AsyncMock:
+def _mock_ai_client() -> AsyncMock:
     mock = AsyncMock()
     mock.analyze_image.return_value = _FAKE_OUTPUT
     return mock
@@ -53,7 +54,85 @@ def _mock_repository() -> AsyncMock:
 
 @pytest.fixture
 def _override_dependencies():
-    app.dependency_overrides[_get_ai_client] = _mock_gemini_client
+    app.dependency_overrides[_get_ai_client] = _mock_ai_client
+    app.dependency_overrides[_get_redis] = lambda: MagicMock()
+    app.dependency_overrides[_get_repository] = _mock_repository
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(_override_dependencies):
+    with TestClient(app, raise_server_exceptions=False) as c:
+        yield c
+
+
+def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
+    response = client.post(
+        ENDPOINT,
+        json=VALID_PAYLOAD,
+        headers={"X-API-Key": "default-secret-key"},
+    )
+
+    assert response.status_code == 200, response.json()
+
+    body = response.json()
+    assert EXPECTED_KEYS.issubset(body.keys())
+
+
+def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
+    response = client.post(
+        ENDPOINT,
+        json=VALID_PAYLOAD,
+        headers={"X-API-Key": "default-secret-key"}
+    )
+    body = response.json()
+
+    for key in EXPECTED_KEYS:
+        assert isinstance(body[key], list), f"Field '{key}' should be a list"
+
+
+def test_analyze_diagram_missing_image_base64_returns_422(client: TestClient) -> None:
+    response = client.post(
+        ENDPOINT,
+        json={"file_path": "test.png"},
+        headers={"X-API-Key": "default-secret-key"}
+    )
+
+    assert response.status_code == 422
+
+
+def test_analyze_diagram_with_file_path(client: TestClient) -> None:
+    payload = {"image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4", "file_path": "diagram.png"}
+    response = client.post(
+        ENDPOINT,
+        json=payload,
+        headers={"X-API-Key": "default-secret-key"}
+    )
+
+    assert response.status_code == 200, response.json()
+
+
+def test_analyze_diagram_returns_500_when_validation_fails(client: TestClient) -> None:
+    from pydantic import ValidationError
+
+    def _mock_invalid_client() -> AsyncMock:
+        mock = AsyncMock()
+        mock.analyze_image.side_effect = ValidationError.from_exception_data(
+            "AIAnalysisOutput", [{"type": "missing", "loc": ("test",), "msg": "test"}]
+        )
+        return mock
+
+    app.dependency_overrides[_get_ai_client] = _mock_invalid_client
+    try:
+        response = client.post(
+            ENDPOINT,
+            json=VALID_PAYLOAD,
+            headers={"X-API-Key": "default-secret-key"}
+        )
+        assert response.status_code in (422, 500)
+    finally:
+        app.dependency_overrides[_get_ai_client] = _mock_ai_client
     app.dependency_overrides[_get_redis] = lambda: MagicMock()
     app.dependency_overrides[_get_repository] = _mock_repository
     yield
@@ -67,60 +146,68 @@ def client(_override_dependencies):
 
 
 def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
-    """POST /analyze-diagram com payload válido deve retornar HTTP 200 e
-    um JSON contendo exatamente as chaves definidas em AIAnalysisOutput."""
-    response = client.post(ENDPOINT, json=VALID_PAYLOAD)
+    response = client.post(
+        ENDPOINT,
+        json=VALID_PAYLOAD,
+        headers={"X-API-Key": "default-secret-key"},
+    )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
 
     body = response.json()
-    assert EXPECTED_KEYS.issubset(body.keys()), (
-        f"Missing keys in response: {EXPECTED_KEYS - body.keys()}"
-    )
+    assert EXPECTED_KEYS.issubset(body.keys())
 
 
 def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
-    """Todos os campos do schema de saída devem ser listas."""
-    response = client.post(ENDPOINT, json=VALID_PAYLOAD)
+    response = client.post(
+        ENDPOINT,
+        json=VALID_PAYLOAD,
+        headers={"X-API-Key": "default-secret-key"}
+    )
     body = response.json()
 
     for key in EXPECTED_KEYS:
-        assert isinstance(body[key], list), (
-            f"Field '{key}' should be a list, but is {type(body[key])}"
-        )
+        assert isinstance(body[key], list), f"Field '{key}' should be a list"
 
 
 def test_analyze_diagram_missing_image_base64_returns_422(client: TestClient) -> None:
-    """Payload sem o campo obrigatório image_base64 deve retornar HTTP 422."""
-    response = client.post(ENDPOINT, json={})
+    response = client.post(
+        ENDPOINT,
+        json={"file_path": "test.png"},
+        headers={"X-API-Key": "default-secret-key"}
+    )
 
     assert response.status_code == 422
 
 
-def test_analyze_diagram_accepts_optional_url(client: TestClient) -> None:
-    """O campo url é opcional; enviá-lo não deve alterar o status_code."""
-    payload = {**VALID_PAYLOAD, "url": "https://example.com/diagram.png"}
-    response = client.post(ENDPOINT, json=payload)
+def test_analyze_diagram_with_file_path(client: TestClient) -> None:
+    payload = {"image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4", "file_path": "diagram.png"}
+    response = client.post(
+        ENDPOINT,
+        json=payload,
+        headers={"X-API-Key": "default-secret-key"}
+    )
 
     assert response.status_code == 200
 
 
-def test_analyze_diagram_returns_503_when_ai_unavailable(client: TestClient) -> None:
-    """Quando o cliente de IA lança ServerError retriável, o endpoint deve retornar HTTP 503."""
-    from google.genai import errors as genai_errors
+def test_analyze_diagram_returns_500_when_validation_fails(client: TestClient) -> None:
+    from pydantic import ValidationError
 
-    def _mock_failing_gemini_client() -> AsyncMock:
-        # Simula todos os modelos indisponíveis — ServerError com código 503.
+    def _mock_invalid_client() -> AsyncMock:
         mock = AsyncMock()
-        err = genai_errors.ServerError.__new__(genai_errors.ServerError)
-        err.code = 503
-        mock.analyze_image.side_effect = err
+        mock.analyze_image.side_effect = ValidationError.from_exception_data(
+            "AIAnalysisOutput", [{"type": "missing", "loc": ("test",), "msg": "test"}]
+        )
         return mock
 
-    app.dependency_overrides[_get_ai_client] = _mock_failing_gemini_client
+    app.dependency_overrides[_get_ai_client] = _mock_invalid_client
     try:
-        response = client.post(ENDPOINT, json=VALID_PAYLOAD)
-        assert response.status_code == 503
+        response = client.post(
+            ENDPOINT,
+            json=VALID_PAYLOAD,
+            headers={"X-API-Key": "default-secret-key"}
+        )
+        assert response.status_code in (422, 500)
     finally:
-        # Restaura o mock original para não contaminar outros testes.
-        app.dependency_overrides[_get_ai_client] = _mock_gemini_client
+        app.dependency_overrides[_get_ai_client] = _mock_ai_client

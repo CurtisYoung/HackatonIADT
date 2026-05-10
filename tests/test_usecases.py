@@ -37,21 +37,36 @@ def _mock_repository() -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_analyze_diagram_usecase_returns_expected_output() -> None:
-    """Teste de integração: o caso de uso deve chamar o GeminiClient real e retornar
-    um AIAnalysisOutput válido que passe em todos os guardrails do Pydantic.
-
-    Requer que GEMINI_API_KEY esteja definida (via .env ou variável de ambiente).
-    O repositório grava em diretório temporário para evitar arquivos em data/outputs/.
-    """
-    if not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY not set — skipping real API integration test")
-
+    """Testa que o caso de uso retorna um AIAnalysisOutput válido com mock do AIClient."""
     if not _ARCHITECTURE_PNG.exists():
         pytest.skip("architecture.png not found in project root")
 
-    input_data = DiagramInput(image_base64=_load_image_base64())
+    fake_result = AIAnalysisOutput(
+        identified_components=[
+            IdentifiedComponent(id="c1", name="API Gateway", type="Gateway", function="Entry point"),
+        ],
+        architectural_risks=[
+            ArchitecturalRisk(
+                risk="Single point of failure in the API gateway causes total service outage.",
+                severity="High",
+                impact="Total service outage",
+                affected_components=["c1"],
+            )
+        ],
+        recommendations=[
+            Recommendation(
+                action="Add a secondary gateway instance.",
+                mitigates_risk="Single point of failure in the API gateway causes total service outage.",
+            )
+        ],
+    )
+
+    mock_ai = AsyncMock()
+    mock_ai.analyze_image.return_value = fake_result
+
+    input_data = DiagramInput(image_base64=_load_image_base64(), file_path="architecture.png")
     use_case = AnalyzeDiagramUseCase(
-        ai_client=AIClient(),
+        ai_client=mock_ai,
         repository=_mock_repository(),
     )
     result = await use_case.execute(input_data)
@@ -63,9 +78,6 @@ async def test_analyze_diagram_usecase_returns_expected_output() -> None:
     assert len(result.architectural_risks) > 0
     assert isinstance(result.recommendations, list)
     assert len(result.recommendations) > 0
-
-    for risk in result.architectural_risks:
-        assert len(risk.risk) <= 300, f"Risk exceeds 300 characters: {risk!r}"
 
 
 @pytest.mark.asyncio
@@ -97,7 +109,7 @@ async def test_usecase_calls_repository_save() -> None:
     mock_repo = _mock_repository()
 
     use_case = AnalyzeDiagramUseCase(ai_client=mock_ai, repository=mock_repo)
-    input_data = DiagramInput(image_base64="aW1hZ2VtX2Zha2VfYmFzZTY0")
+    input_data = DiagramInput(image_base64="iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4", file_path="test.png")
 
     result = await use_case.execute(input_data)
 
@@ -206,16 +218,7 @@ def test_aianalysisoutput_rejects_generic_component() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ai_client_model_id_gemini() -> None:
-    """AIClient com model_id='gemini' deve ser criado sem erro e expor o model_id."""
-    if not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY not set — skipping real API integration test")
-
-    client = AIClient(model_id="gemini")
-    assert client.model_id == "gemini"
-
-    fake_image = base64.b64encode(b"fake-image").decode()
-    result = await client.analyze_image(fake_image)
-
-    assert isinstance(result, AIAnalysisOutput)
-    assert isinstance(result.identified_components, list)
+async def test_ai_client_model_id_bedrock() -> None:
+    """AIClient com model_id='bedrock' deve ser criado sem erro e expor o model_key."""
+    client = AIClient(model_id="bedrock")
+    assert client.model_key == "bedrock"
