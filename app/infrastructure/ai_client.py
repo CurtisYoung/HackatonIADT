@@ -82,7 +82,7 @@ You are a Senior Security Analyst. Your task is to perform a security audit of t
 """
 
 SUPPORTED_MODELS = {
-    "bedrock": "bedrock/amazon.nova-2-lite-v1:0",
+    "bedrock": "bedrock/amazon.nova-lite-v1:0",
     "gemini": "gemini/gemini-2.5-flash",
 }
 
@@ -108,6 +108,19 @@ class AIClient:
 
     async def _call_model(self, base64_str: str, system_prompt: str, model_name: str) -> str:
         """Executa a chamada ao modelo LiteLLM e devolve o conteúdo JSON bruto."""
+        # Detectar tipo MIME da imagem
+        from app.core.validation import detect_mime_from_base64
+        mime_type = detect_mime_from_base64(base64_str)
+        
+        # Converter MIME type para formato aceito por data URL
+        # image/jpeg → jpeg, image/png → png, application/pdf → pdf
+        mime_to_format = {
+            "image/jpeg": "jpeg",
+            "image/png": "png", 
+            "application/pdf": "pdf"
+        }
+        format_type = mime_to_format.get(mime_type, "jpeg")
+        
         messages = [
             {
                 "role": "user",
@@ -115,12 +128,12 @@ class AIClient:
                     {"type": "text", "text": system_prompt},
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{base64_str}"},
+                        "image_url": {"url": f"data:image/{format_type};base64,{base64_str}"},
                     },
                 ],
             }
         ]
-        log.info(f"Chamando API via LiteLLM com o modelo: {model_name}")
+        log.info(f"Chamando API via LiteLLM com o modelo: {model_name}, formato: {format_type}")
         response = await litellm.acompletion(
             model=model_name,
             messages=messages,
