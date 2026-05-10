@@ -49,7 +49,7 @@ jobs:
 
       - name: Push image to ghcr.io
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/hackaton-iadt:latest
+          IMAGE=ghcr.io/curtyoung/hackaton-iadt:latest
           docker tag hackaton-iadt:latest $IMAGE
           docker push $IMAGE
 
