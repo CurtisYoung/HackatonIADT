@@ -1,4 +1,6 @@
-name: CI
+permissions:
+  packages: write
+  contents: read
 
 on:
   push:
