@@ -82,29 +82,29 @@ You are a Senior Security Analyst. Your task is to perform a security audit of t
 """
 
 SUPPORTED_MODELS = {
-    "gemini": "gemini/gemini-2.5-flash",
     "bedrock": "bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
+    "gemini": "gemini/gemini-2.5-flash",
 }
 
 class AIClient:
     """Cliente de provedor de IA com suporte a fallback e re‑ask."""
 
 
-    def __init__(self, model_id: Literal["gemini", "bedrock"] = "gemini") -> None:
+    def __init__(self, model_id: Literal["gemini", "bedrock"] = "bedrock") -> None:
         # Guardar a chave do modelo para poder fazer fallback
         self.model_key = model_id
         self.model_name = SUPPORTED_MODELS.get(model_id)
         if not self.model_name:
             raise ValueError(f"Modelo '{model_id}' não é suportado.")
 
-        if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
-            raise ValueError("A variável de ambiente GEMINI_API_KEY não foi definida.")
         if "bedrock" in self.model_name and not (
             os.environ.get("AWS_ACCESS_KEY_ID") and
             os.environ.get("AWS_SECRET_ACCESS_KEY") and
             os.environ.get("AWS_REGION_NAME")
         ):
             raise ValueError("As variáveis de ambiente da AWS para o Bedrock não foram definidas.")
+        if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
+            raise ValueError("A variável de ambiente GEMINI_API_KEY não foi definida.")
 
     async def _call_model(self, base64_str: str, system_prompt: str, model_name: str) -> str:
         """Executa a chamada ao modelo LiteLLM e devolve o conteúdo JSON bruto."""
@@ -175,12 +175,6 @@ class AIClient:
                 raise
         # Se sai do loop sem retornar, lança erro genérico
         raise RuntimeError("Falha ao obter resposta válida do modelo após múltiplas tentativas.")
-
-    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
-        return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)
-
-    async def analyze_security(self, base64_str: str) -> SecurityAnalysisOutput:
-        return await self._analyze(base64_str, _SECURITY_SYSTEM_PROMPT, SecurityAnalysisOutput)
 
     async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
         return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)

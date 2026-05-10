@@ -70,13 +70,13 @@ Isso garante rastreabilidade completa de todas as análises realizadas, sem acop
 Requisição HTTP
       │
       ▼
-GeminiClient.analyze_image()
+AIClient.analyze_image()
       │
-      ├─► Tenta: gemini-2.5-flash  ──► sucesso ──► retorna AIAnalysisOutput
+      ├─► Tenta: Claude-3-Sonnet (Bedrock)  ──► sucesso ──► retorna AIAnalysisOutput
       │         │
       │         └─► falha (429 / 500 / 503 / 504)
       │                   │
-      └─► Fallback:  gemini-1.5-flash-8b  ──► sucesso ──► retorna AIAnalysisOutput
+      └─► Fallback:  Gemini 2.5 Flash  ──► sucesso ──► retorna AIAnalysisOutput
                           │
                           └─► falha ──► ServerError/ClientError propagado
                                             │
@@ -86,10 +86,10 @@ GeminiClient.analyze_image()
 
 | Etapa               | Detalhe                                                                                                      |
 |---------------------|--------------------------------------------------------------------------------------------------------------|
-| **Modelo principal**| `gemini-2.5-flash` — melhor capacidade de visão computacional                                                |
-| **Modelo fallback** | `gemini-1.5-flash-8b` — econômico e resiliente, acionado nos códigos `429`, `500`, `503`, `504`             |
+| **Modelo principal**| `anthropic.claude-3-sonnet-20240229-v1` (Bedrock) — modelo premium com forte capacidade de análise         |
+| **Modelo fallback** | `gemini/gemini-2.5-flash` (Gemini) — acionado nos códigos de erro `429`, `500`, `503`, `504`                |
 | **Loop de autocorreção (re-ask)** | Se o output do LLM falhar nos guardrails do Pydantic, o erro de validação é reenviado ao modelo como instrução de correção. Até `_MAX_RETRIES = 2` tentativas por modelo. |
-| **Tratamento de erros HTTP** | `ServerError` e `ClientError` do SDK `google-genai` são capturados na rota e convertidos em `HTTPException` com código semântico (503 ou 500). |
+| **Tratamento de erros HTTP** | `ServerError` e `ClientError` são capturados na rota e convertidos em `HTTPException` com código semântico (503 ou 500). |
 
 ---
 
@@ -120,14 +120,121 @@ Dois `@field_validator` aplicam regras semânticas:
 
 O schema valida o modelo de entrada com os parâmetros específicos:
 
-- **Modelo principal:** `anthropic.claude-3-sonnet-20240229-v1` (pode ser alterado via ambiente)
-- **Modelo fallback:** `anthropic.claude-3-haiku-20240307` (pode ser alterado via ambiente)
+- **Modelo principal:** `anthropic.claude-3-sonnet-20240229-v1` (Bedrock)
+- **Modelo fallback:** `gemini/gemini-2.5-flash` (Gemini)
 
 Até 2 tentativas por modelo antes de propagar o erro.
 
 ---
 
-## 5. Execução Local com Docker
+## 5. Execução Local (Sem Docker)
+
+Para executar o projeto localmente sem Docker, siga estas etapas:
+
+### 5.1 Pré-requisitos
+
+- Python 3.12 ou superior
+- Redis (pode ser executado via Docker ou localmente)
+- Git
+
+### 5.2 Configuração do Ambiente
+
+1. **Clone o repositório e instale dependências:**
+
+   ```bash
+   git clone https://github.com/CurtisYoung/HackatonIADT.git
+   cd HackatonIADT
+   pip install -r requirements.txt
+   ```
+
+2. **Configure variáveis de ambiente:**
+
+   Copie o arquivo de exemplo e edite com suas credenciais:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edite o `.env` com suas chaves de API:
+
+   ```bash
+   # Credenciais AWS obrigatórias para Bedrock (modelo principal)
+   AWS_ACCESS_KEY_ID=your-aws-access-key-id
+   AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+   AWS_REGION=us-east-1
+   AWS_REGION_NAME=us-east-1  # também necessário para LiteLLM
+   
+   # Chave opcional para Gemini (fallback)
+   GEMINI_API_KEY=your-gemini-api-key-here
+   
+   # Chave de API para autenticação (opcional, padrão: "default-secret-key")
+   API_KEY=your-api-key-for-auth
+   ```
+
+3. **Inicie o Redis:**
+
+   Opção 1: Usando Docker (recomendado):
+   ```bash
+   docker run -d -p 6379:6379 redis:alpine
+   ```
+
+   Opção 2: Instalação local:
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get install redis-server
+   sudo systemctl start redis-server
+   
+   # macOS com Homebrew
+   brew install redis
+   brew services start redis
+   ```
+
+### 5.3 Executando a Aplicação
+
+1. **Inicie o servidor FastAPI:**
+
+   ```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. **Acesse a API:**
+
+   - API: `http://localhost:8000`
+   - Documentação interativa: `http://localhost:8000/docs`
+   - Documentação Redoc: `http://localhost:8000/redoc`
+   - Health check: `http://localhost:8000/health`
+   - Endpoint MCP: `http://localhost:8000/mcp`
+
+### 5.4 Executando Testes
+
+```bash
+# Executar todos os testes
+pytest tests/
+
+# Executar testes específicos
+pytest tests/test_routes.py
+pytest tests/test_async_routes.py
+
+# Executar testes com coverage
+pytest --cov=app tests/
+```
+
+### 5.5 Exemplo de Uso com curl
+
+```bash
+# Health check
+curl -X GET "http://localhost:8000/health"
+
+# Análise síncrona (com API key)
+curl -X POST "http://localhost:8000/analyze/diagram/sync" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR42mWQMQ7AIAwEwD/gwqJTcWKP1P83s62FI7HUWhtpsA8ec57khkQG0RAbCME4JV6n48u/PDwAQIi3zoQeW7k+i4j13AAAAABJRU5ErkJggg=="
+  }'
+```
+
+## 6. Execução Local com Docker
 
 Para executar o projeto localmente com Docker, siga estas etapas:
 
@@ -139,21 +246,22 @@ Para executar o projeto localmente com Docker, siga estas etapas:
      mv .env.example .env
      ```
 
-     Edite o `.env` com suas chaves de API reais:
+      Edite o `.env` com suas chaves de API reais:
 
-     ```bash
-     GEMINI_API_KEY=your-gemini-api-key
-     AWS_ACCESS_KEY_ID=your-aws-access-key-id
-     AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-     AWS_REGION=us-east-1
-     ```
+      ```bash
+      AWS_ACCESS_KEY_ID=your-aws-access-key-id
+      AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+      AWS_REGION=us-east-1
+      AWS_REGION_NAME=us-east-1
+      GEMINI_API_KEY=your-gemini-api-key
+      ```
 
 2. **Construindo e executando com Docker Compose**
 
    ```bash
    # Construir e iniciar os contêineres
    docker-compose up --build
-    
+   
    # Para rodar em modo daemon (em segundo plano)
    docker-compose up -d
    ```
@@ -182,18 +290,18 @@ Para executar o projeto localmente com Docker, siga estas etapas:
    ```bash
    # Parar e remover contêineres
    docker-compose down --volumes
-   
+  
    # Remover a imagem construída
    docker image rm iadt-app:latest
    ```
 
 ---
 
-## 7. Infraestrutura (Terraform)
+## 8. Infraestrutura (Terraform)
 
 O projeto inclui arquivos Terraform para provisionar automaticamente o usuário IAM com as permissões necessárias para o Amazon Bedrock.
 
-### 7.1 Provisionamento
+### 8.1 Provisionamento
 
 1.  Navegue até a pasta terraform:
     ```bash
@@ -208,7 +316,7 @@ O projeto inclui arquivos Terraform para provisionar automaticamente o usuário 
     terraform apply
     ```
 
-### 7.2 Obtendo as Credenciais (Secrets)
+### 8.2 Obtendo as Credenciais (Secrets)
 
 Como as chaves de acesso são informações sensíveis, elas são marcadas como `sensitive` no Terraform. Para visualizá-las e configurar seu arquivo `.env`, utilize os seguintes comandos:
 
@@ -229,7 +337,7 @@ Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
 
 ---
 
-## 9. Uso como MCP Server (VS Code / Claude Desktop)
+## 10. Uso como MCP Server (VS Code / Claude Desktop)
 
 Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs como o Claude (no Desktop ou via extensões no VS Code) utilizem as ferramentas de análise de diagrama diretamente.
 

@@ -21,7 +21,7 @@ def _get_redis() -> redis.Redis:
     return get_redis_client()
 
 
-def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
+def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "bedrock") -> AIClient:
     """Fábrica do cliente de IA, com suporte a múltiplos provedores."""
     try:
         return AIClient(model_id=model_id)
