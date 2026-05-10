@@ -13,8 +13,11 @@ except ImportError:
 
 
 class RedisLike(Protocol):
-    def get(self, key: str) -> Optional[str]: ...
-    def set(self, key: str, value: str) -> bool: ...
+    def get(self, key: str) -> Optional[str]:
+        pass
+    
+    def set(self, key: str, value: str) -> bool:
+        pass
 
 
 @dataclass
