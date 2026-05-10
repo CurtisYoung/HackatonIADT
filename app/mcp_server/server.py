@@ -11,6 +11,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 API_BASE_URL = os.getenv("IADT_API_URL", "http://localhost:8000")
+API_KEY = os.getenv("API_KEY", "default-secret-key")
 
 mcp = FastMCP("diagram-analyzer")
 
@@ -40,7 +41,11 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(f"{API_BASE_URL}{endpoint}", json=payload)
+            response = await client.post(
+                f"{API_BASE_URL}{endpoint}",
+                json=payload,
+                headers={"X-API-Key": API_KEY}
+            )
             response.raise_for_status()
             return _serialize(response.json())
     except Exception as exc:
@@ -70,4 +75,7 @@ async def analyze_security(file_path: str = None, image_base64: str = None) -> s
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", mount_path="/mcp")
+    import os
+    port = int(os.environ.get("MCP_PORT", 8001))
+    mcp.settings.port = port
+    mcp.run(transport="streamable-http")

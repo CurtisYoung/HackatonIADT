@@ -1,7 +1,9 @@
 """Entry point para rodar o MCP Server standalone."""
-import uvicorn
 
 if __name__ == "__main__":
+    import os
     from app.mcp_server import mcp
 
-    mcp.run(transport="streamable-http", mount_path="/mcp")
+    port = int(os.environ.get("MCP_PORT", 8001))
+    mcp.settings.port = port
+    mcp.run(transport="streamable-http")
