@@ -191,19 +191,27 @@ Para executar o projeto localmente sem Docker, siga estas etapas:
 
 ### 5.3 Executando a Aplicação
 
-1. **Inicie o servidor FastAPI:**
+1. **Inicie o servidor REST API (FastAPI):**
 
-   ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
+    ```bash
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    ```
 
-2. **Acesse a API:**
+2. **Inicie o servidor MCP (opcional):**
 
-   - API: `http://localhost:8000`
-   - Documentação interativa: `http://localhost:8000/docs`
-   - Documentação Redoc: `http://localhost:8000/redoc`
-   - Health check: `http://localhost:8000/health`
-   - Endpoint MCP: `http://localhost:8000/mcp`
+    ```bash
+    python -m app.mcp_server.main
+    # Ou diretamente via FastMCP:
+    uvicorn app.mcp_server.server:mcp --host 0.0.0.0 --port 8001
+    ```
+
+3. **Acesse a API:**
+
+    - API: `http://localhost:8000`
+    - Documentação interativa: `http://localhost:8000/docs`
+    - Documentação Redoc: `http://localhost:8000/redoc`
+    - Health check: `http://localhost:8000/health`
+    - MCP Server (standalone): `http://localhost:8001/mcp` (se iniciado)
 
 ### 5.4 Executando Testes
 
@@ -341,23 +349,33 @@ Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
 
 Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs como o Claude (no Desktop ou via extensões no VS Code) utilizem as ferramentas de análise de diagrama diretamente.
 
-### 9.1 Configuração no VS Code (extensão Cline / Roo Code)
+### 10.1 Executando o Servidor MCP
 
-Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code, você pode conectar o servidor MCP diretamente via HTTP:
+O servidor MCP é um processo separado que se comunica com a API REST:
+
+```bash
+# Terminal 1: API REST
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2: MCP Server
+python -m app.mcp_server.main
+```
+
+### 10.2 Configuração no VS Code (extensão Cline / Roo Code)
+
+Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code:
 
 ```json
 {
   "mcpServers": {
     "diagram-analyzer": {
-      "url": "http://localhost:8000/mcp"
+      "url": "http://localhost:8001/mcp"
     }
   }
 }
 ```
 
-### 9.2 Configuração no Claude Desktop
-
-Para usar com o aplicativo Claude Desktop, a configuração também é feita via URL, sem necessidade de rodar scripts locais ou configurar segredos no cliente:
+### 10.3 Configuração no Claude Desktop
 
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -366,88 +384,38 @@ Para usar com o aplicativo Claude Desktop, a configuração também é feita via
 {
   "mcpServers": {
     "diagram-analyzer": {
-      "url": "http://localhost:8000/mcp"
+      "url": "http://localhost:8001/mcp"
     }
   }
 }
 ```
 
-### 9.3 Ferramentas Disponíveis
+### 10.4 Ferramentas Disponíveis
 
-Uma vez configurado, a IA terá acesso às seguintes ferramentas:
 - `analyze_diagram`: Analisa componentes e riscos de um arquivo local ou base64.
 - `analyze_security`: Foca especificamente em vulnerabilidades de segurança.
 
-### 9.4 Testando o MCP Localmente
+### 10.5 Testando o MCP
 
-Para testar as ferramentas MCP diretamente no terminal:
+```bash
+# Lista ferramentas
+curl -X POST "http://localhost:8001/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
 
-1. **Inicie a API principal:**
-   ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-2. **Teste via curl (Streamable HTTP):**
-   ```bash
-   # Lista ferramentas disponíveis
-   curl -X POST "http://localhost:8000/mcp" \
-     -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
-
-   # Chama a ferramenta analyze_diagram
-   curl -X POST "http://localhost:8000/mcp" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "jsonrpc": "2.0",
-       "id": "1",
-       "method": "tools/call",
-       "params": {
-         "name": "analyze_diagram",
-         "arguments": {"file_path": "architecture.png"}
-       }
-     }'
-
-   # Chama a ferramenta analyze_security
-   curl -X POST "http://localhost:8000/mcp" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "jsonrpc": "2.0",
-       "id": "1",
-       "method": "tools/call",
-       "params": {
-         "name": "analyze_security",
-         "arguments": {"file_path": "architecture.png"}
-       }
-     }'
-   ```
-
-3. **Teste com stdio (requer Node.js e npx):**
-   ```bash
-   # Lista ferramentas
-   npx @modelcontextprotocol/inspector \
-     --transport stdio \
-     -- python -m app.mcp.server
-
-   # Ou use o servidor diretamente se preferir
-   python -m app.mcp.server
-   ```
-
-4. **Teste rápido com Python (httpx):**
-   ```bash
-   python -c "
-   import httpx
-   import base64
-
-   with open('architecture.png', 'rb') as f:
-       img_b64 = base64.b64encode(f.read()).decode()
-
-   r = httpx.post('http://localhost:8000/analyze/diagram/sync', json={
-       'image_base64': img_b64,
-       'model_type': 'bedrock'
-   })
-   print(r.json())
-   "
-   ```
+# Chama a ferramenta analyze_diagram
+curl -X POST "http://localhost:8001/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "1",
+    "method": "tools/call",
+    "params": {
+      "name": "analyze_diagram",
+      "arguments": {"file_path": "architecture.png"}
+    }
+  }'
+```
 
 ---
 

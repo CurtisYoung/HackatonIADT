@@ -13,7 +13,6 @@ from app.core.logging import get_logger
 load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
 
 from app.api.routes import router  # noqa: E402
-from app.mcp.server import mcp
 
 log = get_logger(__name__)
 
@@ -67,4 +66,3 @@ async def dev_info():
     return {"app_version": __version__, "environment": "development"}
 
 app.include_router(router)
-app.mount("/mcp", mcp.streamable_http_app())
