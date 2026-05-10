@@ -5,10 +5,16 @@ from __future__ import annotations
 import base64
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+
+# Carrega .env automaticamente
+_project_root = Path(__file__).resolve().parents[2]
+load_dotenv(_project_root / ".env")
 
 API_BASE_URL = os.getenv("IADT_API_URL", "http://localhost:8000")
 API_KEY = os.getenv("API_KEY", "default-secret-key")
@@ -35,9 +41,10 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
 
     payload = {
         "image_base64": b64,
-        "file_path": file_path,
         "model_type": "gemini"
     }
+    if file_path:
+        payload["file_path"] = file_path
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:

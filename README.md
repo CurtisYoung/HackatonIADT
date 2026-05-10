@@ -361,10 +361,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 python -m app.mcp_server.main
 ```
 
-**Variáveis de ambiente:**
-- `IADT_API_URL` — URL da API REST (padrão: `http://localhost:8000`)
-- `API_KEY` — Chave de autenticação da API (padrão: `default-secret-key`)
+**Variáveis de ambiente (opcionais):**
 - `MCP_PORT` — Porta do servidor MCP (padrão: `8001`)
+
+O MCP lê `IADT_API_URL` e `API_KEY` automaticamente do `.env`.
 
 ### 10.2 Configuração no VS Code (extensão Cline / Roo Code)
 
