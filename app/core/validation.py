@@ -12,6 +12,14 @@ def detect_mime_from_base64(b64_string: str) -> str:
 
     Suporta JPEG, PNG e PDF. Levanta ``ValueError`` se o tipo não for reconhecido.
     """
+    # Remove prefixo data:image/...;base64, se presente
+    if b64_string.startswith('data:'):
+        # Extrai a parte após base64,
+        parts = b64_string.split(',', 1)
+        if len(parts) != 2:
+            raise ValueError('Formato data URL inválido')
+        b64_string = parts[1]
+    
     try:
         raw = base64.b64decode(b64_string, validate=True)
     except binascii.Error as exc:

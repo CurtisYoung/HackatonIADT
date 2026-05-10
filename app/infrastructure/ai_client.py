@@ -82,7 +82,7 @@ You are a Senior Security Analyst. Your task is to perform a security audit of t
 """
 
 SUPPORTED_MODELS = {
-    "bedrock": "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "bedrock": "bedrock/anthropic.claude-3-5-haiku-20240307-v1:0",
     "gemini": "gemini/gemini-2.5-flash",
 }
 
