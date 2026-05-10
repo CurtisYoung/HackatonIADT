@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import base64
 import os
 from typing import Literal
 import litellm
@@ -82,45 +81,44 @@ You are a Senior Security Analyst. Your task is to perform a security audit of t
 """
 
 SUPPORTED_MODELS = {
-    "bedrock": "bedrock/amazon.nova-lite-v1:0",
+    "bedrock": "bedrock/amazon.nova-pro-v1:0",
     "gemini": "gemini/gemini-2.5-flash",
 }
+
+litellm.drop_params = True
+
 
 class AIClient:
     """Cliente de provedor de IA com suporte a fallback e re‑ask."""
 
-
     def __init__(self, model_id: Literal["gemini", "bedrock"] = "bedrock") -> None:
-        # Guardar a chave do modelo para poder fazer fallback
         self.model_key = model_id
         self.model_name = SUPPORTED_MODELS.get(model_id)
         if not self.model_name:
             raise ValueError(f"Modelo '{model_id}' não é suportado.")
 
-        if "bedrock" in self.model_name and not (
-            os.environ.get("AWS_ACCESS_KEY_ID") and
-            os.environ.get("AWS_SECRET_ACCESS_KEY") and
-            os.environ.get("AWS_REGION_NAME")
-        ):
-            raise ValueError("As variáveis de ambiente da AWS para o Bedrock não foram definidas.")
+        if "bedrock" in self.model_name:
+            if not os.environ.get("AWS_ACCESS_KEY_ID"):
+                raise ValueError("AWS_ACCESS_KEY_ID não definido.")
+            if not os.environ.get("AWS_SECRET_ACCESS_KEY"):
+                raise ValueError("AWS_SECRET_ACCESS_KEY não definido.")
+            if not os.environ.get("AWS_REGION_NAME"):
+                raise ValueError("AWS_REGION_NAME não definido.")
         if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
-            raise ValueError("A variável de ambiente GEMINI_API_KEY não foi definida.")
+            raise ValueError("GEMINI_API_KEY não definido.")
 
     async def _call_model(self, base64_str: str, system_prompt: str, model_name: str) -> str:
         """Executa a chamada ao modelo LiteLLM e devolve o conteúdo JSON bruto."""
-        # Detectar tipo MIME da imagem
         from app.core.validation import detect_mime_from_base64
         mime_type = detect_mime_from_base64(base64_str)
-        
-        # Converter MIME type para formato aceito por data URL
-        # image/jpeg → jpeg, image/png → png, application/pdf → pdf
+
         mime_to_format = {
             "image/jpeg": "jpeg",
-            "image/png": "png", 
+            "image/png": "png",
             "application/pdf": "pdf"
         }
         format_type = mime_to_format.get(mime_type, "jpeg")
-        
+
         messages = [
             {
                 "role": "user",
@@ -133,61 +131,58 @@ class AIClient:
                 ],
             }
         ]
-        log.info(f"Chamando API via LiteLLM com o modelo: {model_name}, formato: {format_type}")
-        response = await litellm.acompletion(
-            model=model_name,
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
-        return response.choices[0].message.content
+        log.info(f"LiteLLM: model={model_name}, mime={format_type}")
+
+        try:
+            response = await litellm.acompletion(
+                model=model_name,
+                messages=messages,
+                timeout=120.0,
+            )
+        except Exception as e:
+            log.error(f"Erro LiteLLM: {e}", exc_info=True)
+            raise
+
+        raw_content = response.choices[0].message.content
+        import re
+        match = re.search(r"```(?:json)?\s*(.+?)```", raw_content, re.DOTALL)
+        if match:
+            raw_content = match.group(1)
+        return raw_content
 
     async def _analyze(self, base64_str: str, system_prompt: str, output_schema: BaseModel) -> BaseModel:
-        """Envia a imagem para o modelo de IA e retorna a análise estruturada.
-        - Re‑ask automático em caso de ValidationError (guardrails).
-        - Fallback para outro provedor se o modelo atual estiver indisponível (status 429‑504).
-        """
+        """Envia a imagem para o modelo de IA e retorna a análise estruturada."""
         attempt = 0
         current_key = self.model_key
         while attempt <= _MAX_RETRIES:
             try:
                 raw_json = await self._call_model(base64_str, system_prompt, SUPPORTED_MODELS[current_key])
-                # Tenta validar o JSON via Pydantic
                 return output_schema.model_validate_json(raw_json)
             except ValidationError as ve:
-                # Guardrail violado – re‑ask ao modelo com o erro
                 attempt += 1
                 if attempt > _MAX_RETRIES:
-                    log.error("Re‑ask excedeu número máximo de tentativas.")
+                    log.error(f"Re‑ask excedeu máximo: {ve}")
                     raise
-                log.warning(f"Guardrail violado (attempt {attempt}). Re‑ask ao modelo.")
-                # Ajusta a mensagem adicionando o erro para o modelo corrigir
-                system_prompt = system_prompt + f"\n\nErro de validação: {ve}\nPor favor, corrija o JSON."
-                # pequeno delay antes de re‑ask
+                log.warning(f"Guardrail violado (attempt {attempt}). Re‑ask.")
+                system_prompt = system_prompt + f"\n\nErro: {ve}\nCorrija o JSON."
                 await asyncio.sleep(1)
                 continue
             except Exception as exc:
-                # Detecta erro de provider indisponível (códigos HTTP comuns)
                 status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
                 if status and int(status) in {429, 500, 503, 504}:
-                    # Fallback para outro modelo, se houver
                     attempt += 1
                     if attempt > _MAX_RETRIES:
-                        log.error("Fallback excedeu número máximo de tentativas.")
+                        log.error("Fallback excedeu máximo.")
                         raise
-                    log.warning(
-                        f"Provider indisponível (status {status}). Tentativa {attempt} de fallback após {_PROVIDER_RETRY_DELAY}s."
-                    )
-                    # troca de modelo
+                    log.warning(f"Provider status {status}. Fallback após {_PROVIDER_RETRY_DELAY}s.")
                     other_keys = [k for k in SUPPORTED_MODELS if k != current_key]
                     if other_keys:
                         current_key = other_keys[0]
                     await asyncio.sleep(_PROVIDER_RETRY_DELAY)
                     continue
-                # Qualquer outro erro é propagado
-                log.error(f"Erro inesperado na chamada de IA: {exc}", exc_info=True)
+                log.error(f"Erro na chamada de IA: {exc}", exc_info=True)
                 raise
-        # Se sai do loop sem retornar, lança erro genérico
-        raise RuntimeError("Falha ao obter resposta válida do modelo após múltiplas tentativas.")
+        raise RuntimeError("Falha após múltiplas tentativas.")
 
     async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
         return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)
