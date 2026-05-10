@@ -86,7 +86,7 @@ AIClient.analyze_image()
 
 | Etapa               | Detalhe                                                                                                      |
 |---------------------|--------------------------------------------------------------------------------------------------------------|
-| **Modelo principal**| `anthropic.claude-3-sonnet-20240229-v1` (Bedrock) — modelo premium com forte capacidade de análise         |
+| **Modelo principal**| `anthropic.claude-3-5-sonnet-20241022-v2:0` (Bedrock) — modelo premium mais recente com forte capacidade de análise |
 | **Modelo fallback** | `gemini/gemini-2.5-flash` (Gemini) — acionado nos códigos de erro `429`, `500`, `503`, `504`                |
 | **Loop de autocorreção (re-ask)** | Se o output do LLM falhar nos guardrails do Pydantic, o erro de validação é reenviado ao modelo como instrução de correção. Até `_MAX_RETRIES = 2` tentativas por modelo. |
 | **Tratamento de erros HTTP** | `ServerError` e `ClientError` são capturados na rota e convertidos em `HTTPException` com código semântico (503 ou 500). |
