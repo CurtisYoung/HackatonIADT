@@ -46,10 +46,10 @@ def client(setup_overrides):
 def test_analyze_diagram_async_creates_task(client: TestClient):
     # Setup
     _MOCK_REDIS.set.return_value = True
-    payload = {"image_base64": "aW1hZ2VtX2Zha2VfYmFzZTY0"}
+    payload = {"image_base64": "aW1hZ2VtX2Zha2VfYmFzZTY0", "model_type": "bedrock"}
     
     # Execute
-    response = client.post("/analyze/diagram/async", json=payload)
+    response = client.post("/analyze/diagram/async", json=payload, headers={"X-API-Key": "your-api-key-for-auth"})
     
     # Assert
     assert response.status_code == 202

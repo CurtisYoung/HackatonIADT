@@ -22,13 +22,20 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        # Injeta no contexto do logger
-        log = get_logger(__name__, extra={"request_id": request_id})
         request.state.request_id = request_id
-        log.info(f"Incoming {request.method} {request.url.path}")
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        
+        # Usa logger padrão e inclui request_id no log via extra
+        log = get_logger(__name__)
+        log.info(f"Incoming {request.method} {request.url.path}", extra={"request_id": request_id})
+        
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        except Exception as e:
+            # Log do erro e propaga
+            log.error(f"Error processing request {request_id}: {e}", extra={"request_id": request_id})
+            raise
 
 app = FastAPI(
     title="IADT - FIAP Secure Systems",

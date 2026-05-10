@@ -4,6 +4,17 @@ import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, AsyncMock
+import sys
+
+# Mock verify_api_key antes de importar qualquer módulo que use router
+def mock_verify_api_key(x_api_key: str = None):
+    # Always accept any API key in tests
+    return
+
+# Injeta o mock no sys.modules antes do import
+import types
+mock_module = types.ModuleType('app.api.routes_mock')
+sys.modules['app.api.routes_mock'] = mock_module
 
 # Carrega o .env antes de importar a aplicação para que GEMINI_API_KEY
 # esteja disponível para o GeminiClient durante a execução dos testes.
@@ -33,7 +44,33 @@ def mock_dependencies(monkeypatch):
     from app.infrastructure.file_repository import FileOutputRepository
     monkeypatch.setattr(FileOutputRepository, "__new__", lambda cls, *args, **kwargs: MOCK_REPO)
     
+    # Mock API key verification to always succeed
+    import app.api.routes
+    original_verify_api_key = app.api.routes.verify_api_key
+    
+    def mock_verify_api_key(x_api_key: str = None):
+        # Always accept any API key in tests
+        return
+    
+    monkeypatch.setattr(app.api.routes, "verify_api_key", mock_verify_api_key)
+    
+    # Mock background task function to prevent ExceptionGroup
+    original_run_analysis = app.api.routes._run_analysis_in_background
+    
+    async def mock_run_analysis(*args, **kwargs):
+        # Simula execução bem-sucedida sem exceções
+        task_id = args[0]
+        redis_client = args[2]
+        # Simula conclusão bem-sucedida
+        redis_client.set(task_id, '{"status": "completed", "result": "{}"}')
+    
+    monkeypatch.setattr(app.api.routes, "_run_analysis_in_background", mock_run_analysis)
+    
     yield
+    
+    # Restaura funções originais
+    monkeypatch.setattr(app.api.routes, "verify_api_key", original_verify_api_key)
+    monkeypatch.setattr(app.api.routes, "_run_analysis_in_background", original_run_analysis)
     
     # Cleanup
     MOCK_REDIS.reset_mock()
@@ -44,18 +81,29 @@ def mock_dependencies(monkeypatch):
 @pytest.fixture(scope="session")
 def client() -> TestClient:
     """TestClient síncrono reutilizado em todos os testes de rotas."""
-    # Criar cópia do app sem middleware problemático para testes
+    # Criar app de teste usando o app original mas com dependency overrides
     from fastapi import FastAPI
-    from app.api.routes import router
+    from app.main import app
     
+    # Criar cópia do app
     test_app = FastAPI(
-        title=original_app.title,
-        description=original_app.description,
-        version=original_app.version,
+        title=app.title,
+        description=app.description,
+        version=app.version,
     )
     
-    # Incluir apenas o router sem middlewares
-    test_app.include_router(router)
+    # Copiar rotas
+    for route in app.routes:
+        test_app.routes.append(route)
+    
+    # Override da verificação de API key para sempre passar
+    from app.api.routes import verify_api_key
+    
+    def mock_verify_api_key(x_api_key: str = None):
+        return
+    
+    # Aplicar override
+    test_app.dependency_overrides[verify_api_key] = mock_verify_api_key
     
     with TestClient(test_app) as c:
         yield c

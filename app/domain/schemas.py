@@ -20,7 +20,7 @@ class DiagramInput(BaseModel):
 
     image_base64: str
     file_path: Optional[str] = None
-    model_type: Literal["gemini", "bedrock"] = "gemini"
+    model_type: Literal["gemini", "bedrock"] = "bedrock"
 
 
 class TaskStatus(BaseModel):
