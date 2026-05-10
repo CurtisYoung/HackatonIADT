@@ -378,6 +378,77 @@ Uma vez configurado, a IA terá acesso às seguintes ferramentas:
 - `analyze_diagram`: Analisa componentes e riscos de um arquivo local ou base64.
 - `analyze_security`: Foca especificamente em vulnerabilidades de segurança.
 
+### 9.4 Testando o MCP Localmente
+
+Para testar as ferramentas MCP diretamente no terminal:
+
+1. **Inicie a API principal:**
+   ```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. **Teste via curl (Streamable HTTP):**
+   ```bash
+   # Lista ferramentas disponíveis
+   curl -X POST "http://localhost:8000/mcp" \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+
+   # Chama a ferramenta analyze_diagram
+   curl -X POST "http://localhost:8000/mcp" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": "1",
+       "method": "tools/call",
+       "params": {
+         "name": "analyze_diagram",
+         "arguments": {"file_path": "architecture.png"}
+       }
+     }'
+
+   # Chama a ferramenta analyze_security
+   curl -X POST "http://localhost:8000/mcp" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": "1",
+       "method": "tools/call",
+       "params": {
+         "name": "analyze_security",
+         "arguments": {"file_path": "architecture.png"}
+       }
+     }'
+   ```
+
+3. **Teste com stdio (requer Node.js e npx):**
+   ```bash
+   # Lista ferramentas
+   npx @modelcontextprotocol/inspector \
+     --transport stdio \
+     -- python -m app.mcp.server
+
+   # Ou use o servidor diretamente se preferir
+   python -m app.mcp.server
+   ```
+
+4. **Teste rápido com Python (httpx):**
+   ```bash
+   python -c "
+   import httpx
+   import base64
+
+   with open('architecture.png', 'rb') as f:
+       img_b64 = base64.b64encode(f.read()).decode()
+
+   r = httpx.post('http://localhost:8000/analyze/diagram/sync', json={
+       'image_base64': img_b64,
+       'model_type': 'bedrock'
+   })
+   print(r.json())
+   "
+   ```
+
 ---
 
 ## 10. Tudo pronto! Bora usar o sistema
