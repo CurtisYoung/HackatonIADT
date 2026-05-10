@@ -53,6 +53,6 @@ jobs:
       - name: Push image to ghcr.io
         if: github.event_name == 'push'
         run: |
-          IMAGE=ghcr.io/curtyoung/hackaton-iadt:latest
+          IMAGE=ghcr.io/${{ github.repository_owner }}/hackaton-iadt:latest
           docker tag hackaton-iadt:latest $IMAGE
           docker push $IMAGE
