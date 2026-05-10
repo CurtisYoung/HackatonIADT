@@ -1,10 +1,8 @@
 from __future__ import annotations
 import os
-import asyncio
 import json
 import uuid
-from typing import Any, Literal, AsyncGenerator
-
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from pydantic import ValidationError
@@ -16,6 +14,40 @@ from app.infrastructure.ai_client import AIClient
 from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 from app.usecases.security_analysis import SecurityAnalysisUseCase
+
+# ---------- Dependências ----------
+
+def _get_redis() -> redis.Redis:
+    return get_redis_client()
+
+
+def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
+    """Fábrica do cliente de IA, com suporte a múltiplos provedores."""
+    try:
+        return AIClient(model_id=model_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=f"Erro de configuração: {exc}")
+
+
+_get_gemini_client = _get_ai_client  # Alias para compatibilidade com testes
+
+
+def _get_repository() -> FileOutputRepository:
+    return FileOutputRepository()
+
+
+def _get_diagram_use_case(
+    client: AIClient = Depends(_get_ai_client),
+    repo: FileOutputRepository = Depends(_get_repository),
+) -> AnalyzeDiagramUseCase:
+    return AnalyzeDiagramUseCase(ai_client=client, repository=repo)
+
+
+def _get_security_use_case(
+    client: AIClient = Depends(_get_ai_client),
+    repo: FileOutputRepository = Depends(_get_repository),
+) -> SecurityAnalysisUseCase:
+    return SecurityAnalysisUseCase(ai_client=client, repository=repo)
 
 router = APIRouter(tags=["Analysis"], dependencies=[])  # dependencies will be filled later
 
@@ -58,41 +90,6 @@ async def analyze_diagram_async(
     background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
     return TaskStatus(task_id=task_id, status="processing")
 
-# ---------- Dependências ----------
-
-
-def _get_redis() -> redis.Redis:
-    return get_redis_client()
-
-
-def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
-    """Fábrica do cliente de IA, com suporte a múltiplos provedores."""
-    try:
-        return AIClient(model_id=model_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=f"Erro de configuração: {exc}")
-
-
-_get_gemini_client = _get_ai_client  # Alias para compatibilidade com testes
-
-
-def _get_repository() -> FileOutputRepository:
-    return FileOutputRepository()
-
-
-def _get_diagram_use_case(
-    client: AIClient = Depends(_get_ai_client),
-    repo: FileOutputRepository = Depends(_get_repository),
-) -> AnalyzeDiagramUseCase:
-    return AnalyzeDiagramUseCase(ai_client=client, repository=repo)
-
-
-def _get_security_use_case(
-    client: AIClient = Depends(_get_ai_client),
-    repo: FileOutputRepository = Depends(_get_repository),
-) -> SecurityAnalysisUseCase:
-    return SecurityAnalysisUseCase(ai_client=client, repository=repo)
-
 # ---------- Rotas existentes (mantidas) ----------
 
 async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
@@ -110,28 +107,6 @@ async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, re
     except Exception as e:
         task_data = {"status": "failed", "error": str(e)}
         redis_client.set(task_id, json.dumps(task_data))
-
- @router.post(
-    "/analyze/diagram/async",
-    response_model=TaskStatus,
-    summary="Inicia a análise de um diagrama de forma assíncrona",
-    status_code=202,
-)
-async def analyze_diagram_async(
-    input_data: DiagramInput,
-    background_tasks: BackgroundTasks,
-    redis_client: redis.Redis = Depends(_get_redis),
-) -> TaskStatus:
-    """
-    Recebe um diagrama, inicia a análise em background e retorna um ID de tarefa.
-    """
-    task_id = str(uuid.uuid4())
-    task_data = {"status": "processing"}
-    redis_client.set(task_id, json.dumps(task_data))
-
-    background_tasks.add_task(_run_analysis_in_background, task_id, input_data, redis_client)
-
-    return TaskStatus(task_id=task_id, status="processing")
 
 
 @router.post(
@@ -153,4 +128,3 @@ async def analyze_security_sync(
         if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
             status_code = 500
         raise HTTPException(status_code=status_code, detail=f"Erro na análise: {exc}")
-
