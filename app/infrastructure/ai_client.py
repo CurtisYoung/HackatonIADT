@@ -102,8 +102,8 @@ class AIClient:
                 raise ValueError("AWS_ACCESS_KEY_ID não definido.")
             if not os.environ.get("AWS_SECRET_ACCESS_KEY"):
                 raise ValueError("AWS_SECRET_ACCESS_KEY não definido.")
-            if not os.environ.get("AWS_REGION_NAME"):
-                raise ValueError("AWS_REGION_NAME não definido.")
+            if not os.environ.get("AWS_REGION"):
+                raise ValueError("AWS_REGION não definido.")
         if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
             raise ValueError("GEMINI_API_KEY não definido.")
 

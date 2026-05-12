@@ -162,7 +162,6 @@ Para executar o projeto localmente sem Docker, siga estas etapas:
    AWS_ACCESS_KEY_ID=your-aws-access-key-id
    AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
    AWS_REGION=us-east-1
-   AWS_REGION_NAME=us-east-1  # também necessário para LiteLLM
    
    # Chave opcional para Gemini (fallback)
    GEMINI_API_KEY=your-gemini-api-key-here
@@ -260,7 +259,6 @@ Para executar o projeto localmente com Docker, siga estas etapas:
       AWS_ACCESS_KEY_ID=your-aws-access-key-id
       AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
       AWS_REGION=us-east-1
-      AWS_REGION_NAME=us-east-1
       GEMINI_API_KEY=your-gemini-api-key
       ```
 
