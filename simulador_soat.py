@@ -45,7 +45,7 @@ def load_image_base64(image_path: Path) -> str:
 
 def call_api(image_base64: str) -> dict:
     """Envia o diagrama para a API e retorna a resposta JSON decodificada."""
-    payload = {"image_base64": image_base64}
+    payload = {"image_base64": image_base64, "model_type": "bedrock"}
 
     console.print(Panel(
         f"[cyan]POST[/cyan] {API_URL}\n"
@@ -55,7 +55,7 @@ def call_api(image_base64: str) -> dict:
     ))
 
     with httpx.Client(timeout=120.0) as client:
-        response = client.post(API_URL, json=payload)
+        response = client.post(API_URL, json=payload, headers={"X-API-Key": "your-api-key-for-auth"})
 
     response.raise_for_status()
     return response.json()

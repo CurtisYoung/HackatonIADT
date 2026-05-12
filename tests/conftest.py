@@ -1,18 +1,8 @@
 from __future__ import annotations
 
-import pytest
-from dotenv import load_dotenv
-from fastapi.testclient import TestClient
+import os
 
-# Carrega o .env antes de importar a aplicação para que GEMINI_API_KEY
-# esteja disponível para o GeminiClient durante a execução dos testes.
-load_dotenv()
-
-from app.main import app  # noqa: E402
-
-
-@pytest.fixture(scope="session")
-def client() -> TestClient:
-    """TestClient síncrono reutilizado em todos os testes de rotas."""
-    with TestClient(app) as c:
-        yield c
+os.environ.setdefault("API_KEY", "default-secret-key")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
+os.environ.setdefault("AWS_REGION_NAME", "us-east-1")

@@ -1,10 +1,10 @@
 from __future__ import annotations
-import asyncio
+import os
 import json
 import uuid
-from typing import Any, Literal
+from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from pydantic import ValidationError
 import redis
 
@@ -15,14 +15,13 @@ from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 from app.usecases.security_analysis import SecurityAnalysisUseCase
 
-router = APIRouter(tags=["Analysis"])
-
+# ---------- Dependências ----------
 
 def _get_redis() -> redis.Redis:
     return get_redis_client()
 
 
-def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "gemini") -> AIClient:
+def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "bedrock") -> AIClient:
     """Fábrica do cliente de IA, com suporte a múltiplos provedores."""
     try:
         return AIClient(model_id=model_id)
@@ -50,6 +49,31 @@ def _get_security_use_case(
 ) -> SecurityAnalysisUseCase:
     return SecurityAnalysisUseCase(ai_client=client, repository=repo)
 
+router = APIRouter(tags=["Analysis"], dependencies=[])  # dependencies will be filled later
+
+# ---------- Segurança via API Key ----------
+API_KEY = os.getenv("API_KEY") or "default-secret-key"
+
+def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> None:
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="API key inválida")
+
+# Aplica a dependência a todos os endpoints do router
+router.dependencies.append(Depends(verify_api_key))
+
+# ---------- Health Check ----------
+@router.get("/health", summary="Endpoint de saúde", response_model=dict)
+async def health_check() -> dict:
+    """Retorna o status de saúde da aplicação, verificando conexões críticas."""
+    try:
+        redis_client = get_redis_client()
+        redis_client.ping()
+        redis_status = "ok"
+    except Exception:
+        redis_status = "unavailable"
+    return {"status": "ok", "redis": redis_status}
+
+# ---------- Rotas principais ----------
 
 async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
     """Função executada em background para não bloquear a resposta da API."""
@@ -164,7 +188,6 @@ async def analyze_security_sync(
     input_data: DiagramInput,
     use_case: SecurityAnalysisUseCase = Depends(_get_security_use_case),
 ) -> SecurityAnalysisOutput:
-
     """
     Endpoint síncrono para análise de segurança.
     """
