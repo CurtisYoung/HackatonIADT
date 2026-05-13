@@ -25,7 +25,7 @@ mcp = FastMCP("diagram-analyzer")
 @mcp.custom_route("/mcp/health", methods=["GET"])
 async def health_check(request):
     """Endpoint de saúde para o K8s."""
-    return {"status": "ok"}
+    return JSONResponse({"status": "ok"})
 
 
 async def _read_file_as_base64(file_path: str) -> str:
@@ -91,4 +91,4 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("MCP_PORT", 8001))
     mcp.settings.port = port
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http")un(transport="streamable-http")
