@@ -30,6 +30,18 @@ spec:
               value: "http://hackaton-iadt-service:80"
             - name: MCP_PORT
               value: "8001"
+          readinessProbe:
+            httpGet:
+              path: /mcp/
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /mcp/
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 20
       restartPolicy: Always
 ---
 apiVersion: v1
