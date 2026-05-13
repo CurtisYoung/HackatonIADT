@@ -343,6 +343,23 @@ Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
 
 ---
 
+## 9. Kubernetes Secrets
+
+Para que o deploy no Kubernetes funcione corretamente, você deve criar um Secret chamado `iadt-secrets` no namespace `iadt`.
+
+```bash
+kubectl create secret generic iadt-secrets -n iadt \
+  --from-literal=gemini_api_key="SUA_CHAVE_GEMINI" \
+  --from-literal=aws_access_key_id="SEU_AWS_ACCESS_KEY" \
+  --from-literal=aws_secret_access_key="SEU_AWS_SECRET_KEY" \
+  --from-literal=aws_region_name="us-east-1" \
+  --from-literal=api_key="SUA_API_KEY_INTERNA"
+```
+
+> **Nota:** Certifique-se de que os nomes das chaves no Secret coincidem com as referências no arquivo `k8s/deployment.yaml`.
+
+---
+
 ## 10. Uso como MCP Server (VS Code / Claude Desktop)
 
 Este projeto implementa o **Model Context Protocol (MCP)**, permitindo que IAs como o Claude (no Desktop ou via extensões no VS Code) utilizem as ferramentas de análise de diagrama diretamente.
