@@ -1,0 +1,21 @@
+**
+!requirements.txt
+!app/
+!.env.example
+!simulador_soat.py
+!README.md
+!pytest.ini
+!tests/
+!k8s/
+!Dockerfile
+!Dockerfile.mcp
+!.github/
+
+# Ignore heavy directories
+terraform/
+.git/
+.pytest_cache/
+__pycache__/
+.env
+data/outputs/
+architecture.png

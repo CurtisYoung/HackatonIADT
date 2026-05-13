@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hackaton-iadt-mcp-deployment
+  namespace: iadt
+  labels:
+    app: hackaton-iadt-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hackaton-iadt-mcp
+  template:
+    metadata:
+      labels:
+        app: hackaton-iadt-mcp
+    spec:
+      containers:
+        - name: mcp-server
+          image: ghcr.io/curtisyoung/hackatoniadt-mcp:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: iadt-secrets
+                  key: api_key
+            - name: IADT_API_URL
+              value: "http://hackaton-iadt-service:80"
+            - name: MCP_PORT
+              value: "8001"
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hackaton-iadt-mcp-service
+  namespace: iadt
+spec:
+  selector:
+    app: hackaton-iadt-mcp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8001
+  type: ClusterIP

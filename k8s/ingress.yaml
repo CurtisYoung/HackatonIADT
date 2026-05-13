@@ -11,6 +11,13 @@ spec:
     - host: iadt.matheuslucena.dev
       http:
         paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: hackaton-iadt-mcp-service
+                port:
+                  number: 80
           - path: /
             pathType: Prefix
             backend:
