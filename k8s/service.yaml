@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: hackaton-iadt-service
+  namespace: iadt
   labels:
     app: hackaton-iadt
 spec:
@@ -11,5 +12,5 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 8000
-  type: LoadBalancer
+  type: ClusterIP
 

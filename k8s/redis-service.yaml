@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hackaton-iadt-redis
+  namespace: iadt
+  labels:
+    app: hackaton-iadt-redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: hackaton-iadt-redis

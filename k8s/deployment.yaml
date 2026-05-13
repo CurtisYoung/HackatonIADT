@@ -46,6 +46,8 @@ spec:
                 secretKeyRef:
                   name: iadt-secrets
                   key: api_key
+            - name: REDIS_HOST
+              value: "hackaton-iadt-redis"
           command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
           readinessProbe:
             httpGet:
