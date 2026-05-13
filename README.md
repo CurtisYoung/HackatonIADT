@@ -324,22 +324,24 @@ O projeto inclui arquivos Terraform para provisionar automaticamente o usuário 
 
 ### 8.2 Obtendo as Credenciais (Secrets)
 
-Como as chaves de acesso são informações sensíveis, elas são marcadas como `sensitive` no Terraform. Para visualizá-las e configurar seu arquivo `.env`, utilize os seguintes comandos:
+...
 
--   **AWS Access Key ID:**
-    ```bash
-    terraform output -raw access_key_id
-    ```
--   **AWS Secret Access Key:**
-    ```bash
-    terraform output -raw secret_access_key
-    ```
--   **Região AWS:**
-    ```bash
-    terraform output -raw region
-    ```
+---
 
-Copie esses valores para as variáveis correspondentes no seu arquivo `.env`.
+## 9. Kubernetes Secrets
+
+Para que o deploy no Kubernetes funcione corretamente, você deve criar um Secret chamado `iadt-secrets` no namespace `iadt`.
+
+```bash
+kubectl create secret generic iadt-secrets -n iadt \
+  --from-literal=gemini_api_key="SUA_CHAVE_GEMINI" \
+  --from-literal=aws_access_key_id="SEU_AWS_ACCESS_KEY" \
+  --from-literal=aws_secret_access_key="SEU_AWS_SECRET_KEY" \
+  --from-literal=aws_region_name="us-east-1" \
+  --from-literal=api_key="SUA_API_KEY_INTERNA"
+```
+
+> **Nota:** Certifique-se de que os nomes das chaves no Secret coincidem com as referências no arquivo `k8s/deployment.yaml`.
 
 ---
 

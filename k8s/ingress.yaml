@@ -4,7 +4,7 @@ metadata:
   name: hackaton-iadt-ingress
   annotations:
     kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: cloudflare-letsencrypt
 spec:
   rules:
     - host: iadt.matheuslucena.dev
