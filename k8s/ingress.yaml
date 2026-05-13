@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hackaton-iadt-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  rules:
+    - host: iadt.matheuslucena.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hackaton-iadt-service
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - iadt.matheuslucena.dev
+      secretName: iadt-tls-secret

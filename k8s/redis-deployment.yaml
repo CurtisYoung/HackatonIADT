@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hackaton-iadt-redis
+  namespace: iadt
+  labels:
+    app: hackaton-iadt-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hackaton-iadt-redis
+  template:
+    metadata:
+      labels:
+        app: hackaton-iadt-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+          # No persistence, runs purely in memory
