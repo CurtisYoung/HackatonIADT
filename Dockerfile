@@ -10,10 +10,19 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=on
 # Install system dependencies
 RUN apk add --no-cache \
     gcc \
+    g++ \
     musl-dev \
     libc-dev \
     libffi-dev \
     openssl-dev \
+    zlib-dev \
+    jpeg-dev \
+    freetype-dev \
+    harfbuzz-dev \
+    openjpeg-dev \
+    jbig2dec-dev \
+    swig \
+    make \
     git \
     bash
 
