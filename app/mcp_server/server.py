@@ -91,4 +91,4 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("MCP_PORT", 8001))
     mcp.settings.port = port
-    mcp.run(transport="streamable-http")un(transport="streamable-http")
+    mcp.run(transport="streamable-http")
