@@ -30,8 +30,18 @@ async def health_check(request):
 
 
 async def _read_file_as_base64(file_path: str) -> str:
-    with open(file_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Arquivo não encontrado: {file_path}. "
+                "Note que este servidor MCP está rodando remotamente e não tem acesso direto aos seus arquivos locais. "
+                "Por favor, envie o conteúdo via 'image_base64'."
+            )
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception as exc:
+        raise RuntimeError(f"Erro ao processar arquivo: {exc}")
 
 
 def _serialize(output: Any) -> str:
@@ -39,21 +49,21 @@ def _serialize(output: Any) -> str:
 
 
 async def _call_api(endpoint: str, file_path: str | None, image_base64: str | None) -> str:
-    b64 = image_base64
-    if file_path and not b64:
-        b64 = await _read_file_as_base64(file_path)
-
-    if not b64:
-        return "Erro: É necessário fornecer 'file_path' ou 'image_base64'."
-
-    payload = {
-        "image_base64": b64,
-        "model_type": "gemini"
-    }
-    if file_path:
-        payload["file_path"] = file_path
-
     try:
+        b64 = image_base64
+        if file_path and not b64:
+            b64 = await _read_file_as_base64(file_path)
+
+        if not b64:
+            return "Erro: É necessário fornecer 'image_base64' (recomendado para uso remoto) ou um 'file_path' válido no servidor."
+
+        payload = {
+            "image_base64": b64,
+            "model_type": "gemini"
+        }
+        if file_path:
+            payload["file_path"] = file_path
+
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{API_BASE_URL}{endpoint}",
@@ -63,16 +73,19 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
             response.raise_for_status()
             return _serialize(response.json())
     except Exception as exc:
-        return f"Erro ao chamar API: {exc}"
+        return f"Erro na operação: {exc}"
 
 
 @mcp.tool()
 async def analyze_diagram(file_path: str = None, image_base64: str = None) -> str:
     """Analisa um diagrama arquitetural (imagem ou PDF).
 
+    IMPORTANTE: Se estiver usando este servidor remotamente (ex: Kubernetes),
+    você DEVE fornecer 'image_base64' pois o servidor não consegue acessar seus arquivos locais.
+
     Args:
-        file_path: Caminho local do arquivo (imagem ou PDF).
-        image_base64: Conteúdo da imagem em base64.
+        file_path: Caminho do arquivo NO SERVIDOR.
+        image_base64: Conteúdo do arquivo em base64 (Recomendado para uso remoto).
     """
     return await _call_api("/analyze/diagram/sync", file_path, image_base64)
 
@@ -81,9 +94,12 @@ async def analyze_diagram(file_path: str = None, image_base64: str = None) -> st
 async def analyze_security(file_path: str = None, image_base64: str = None) -> str:
     """Realiza análise de segurança de um diagrama arquitetural.
 
+    IMPORTANTE: Se estiver usando este servidor remotamente (ex: Kubernetes),
+    você DEVE fornecer 'image_base64' pois o servidor não consegue acessar seus arquivos locais.
+
     Args:
-        file_path: Caminho local do arquivo (imagem ou PDF).
-        image_base64: Conteúdo da imagem em base64.
+        file_path: Caminho do arquivo NO SERVIDOR.
+        image_base64: Conteúdo do arquivo em base64 (Recomendado para uso remoto).
     """
     return await _call_api("/analyze/security/sync", file_path, image_base64)
 
