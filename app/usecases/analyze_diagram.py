@@ -40,7 +40,7 @@ class AnalyzeDiagramUseCase:
                 raise RuntimeError(f"Erro ao ler arquivo: {e}")
 
         if not image_base64:
-             raise ValueError("Nenhum conteúdo de imagem fornecido.")
+            raise ValueError("Nenhum conteúdo de imagem fornecido.")
 
         mime_type = detect_mime_from_base64(image_base64)
         if mime_type == 'application/pdf' or (input_data.file_path and input_data.file_path.endswith('.pdf')):
