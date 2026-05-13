@@ -22,7 +22,7 @@ API_KEY = os.getenv("API_KEY", "default-secret-key")
 mcp = FastMCP("diagram-analyzer")
 
 
-@mcp.custom_route("/health", methods=["GET"])
+@mcp.custom_route("/mcp/health", methods=["GET"])
 async def health_check(request):
     """Endpoint de saúde para o K8s."""
     return {"status": "ok"}
