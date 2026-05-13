@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.logging import get_logger
+from app.core.redis import get_redis_client
 
 load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
 
@@ -57,6 +58,17 @@ app.add_middleware(
 
 # Middleware de correlação de request ID
 app.add_middleware(CorrelationIdMiddleware)
+
+@app.get("/health", summary="Endpoint de saúde", response_model=dict, tags=["Public"])
+async def health_check() -> dict:
+    """Retorna o status de saúde da aplicação, verificando conexões críticas."""
+    try:
+        redis_client = get_redis_client()
+        redis_client.ping()
+        redis_status = "ok"
+    except Exception:
+        redis_status = "unavailable"
+    return {"status": "ok", "redis": redis_status}
 
 # Endpoint rápido para desenvolvedores
 @app.get("/dev/info", tags=["Developer"], summary="Informações de desenvolvimento")

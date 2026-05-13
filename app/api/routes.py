@@ -61,18 +61,6 @@ def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> None:
 # Aplica a dependência a todos os endpoints do router
 router.dependencies.append(Depends(verify_api_key))
 
-# ---------- Health Check ----------
-@router.get("/health", summary="Endpoint de saúde", response_model=dict)
-async def health_check() -> dict:
-    """Retorna o status de saúde da aplicação, verificando conexões críticas."""
-    try:
-        redis_client = get_redis_client()
-        redis_client.ping()
-        redis_status = "ok"
-    except Exception:
-        redis_status = "unavailable"
-    return {"status": "ok", "redis": redis_status}
-
 # ---------- Rotas principais ----------
 
 async def _run_analysis_in_background(task_id: str, input_data: DiagramInput, redis_client: redis.Redis) -> None:
