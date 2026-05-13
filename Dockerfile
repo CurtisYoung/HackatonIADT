@@ -1,5 +1,5 @@
-# Use Python 3.11-alpine as base image
-FROM python:3.11-alpine
+# Use Python 3.11-slim as base image
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -8,23 +8,17 @@ ENV PIP_NO_CACHE_DIR=off
 ENV PIP_DISABLE_PIP_VERSION_CHECK=on
 
 # Install system dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    musl-dev \
-    libc-dev \
     libffi-dev \
-    openssl-dev \
-    zlib-dev \
-    jpeg-dev \
-    freetype-dev \
-    harfbuzz-dev \
-    openjpeg-dev \
-    jbig2dec-dev \
-    swig \
+    libssl-dev \
     make \
     git \
-    bash
+    bash \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
@@ -39,7 +33,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create a non-root user
-RUN adduser -D -s /bin/sh appuser
+RUN useradd -ms /bin/sh appuser
 
 # Switch to non-root user
 USER appuser
