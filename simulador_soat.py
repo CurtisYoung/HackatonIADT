@@ -40,7 +40,16 @@ def load_image_base64(image_path: Path) -> str:
     if not image_path.exists():
         console.print(f"[bold red]Erro:[/bold red] Imagem não encontrada: {image_path}")
         sys.exit(1)
-    return base64.b64encode(image_path.read_bytes()).decode()
+    
+    # Comprime a imagem localmente antes de codificar (max 3MB)
+    from app.core.validation import compress_image_if_needed
+    try:
+        content = compress_image_if_needed(image_path.read_bytes())
+    except Exception as e:
+        console.print(f"[dim yellow]Aviso: não foi possível comprimir a imagem ({e}). Usando original.[/dim yellow]")
+        content = image_path.read_bytes()
+        
+    return base64.b64encode(content).decode()
 
 
 def call_api(image_base64: str) -> dict:

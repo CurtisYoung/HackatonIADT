@@ -6,10 +6,12 @@ from typing import Callable
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis_client
+import os
 
 load_dotenv()  # carrega o .env antes que qualquer módulo leia variáveis de ambiente
 
@@ -47,6 +49,9 @@ app = FastAPI(
     version="1.0.0",
     contact={"name": "Equipe de Arquitetura"},
 )
+
+os.makedirs("data/uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
 # CORS para desenvolvimento (permite todas origens)
 app.add_middleware(

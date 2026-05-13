@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, UploadFile, File, Form, Request
 from pydantic import ValidationError
 import redis
 
@@ -136,6 +136,50 @@ async def get_analysis_result(task_id: str, redis_client: redis.Redis = Depends(
             detail=f"A tarefa ainda não foi concluída (status: {task['status']}).",
         )
     return AIAnalysisOutput.model_validate_json(task["result"])
+
+
+@router.post(
+    "/analyze/diagram/upload",
+    response_model=AIAnalysisOutput,
+    summary="Executa a análise de diagrama fazendo upload do arquivo (ideal para arquivos grandes)",
+)
+async def analyze_diagram_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    model_type: Literal["gemini", "bedrock"] = Form("bedrock"),
+    use_case: AnalyzeDiagramUseCase = Depends(_get_diagram_use_case),
+) -> AIAnalysisOutput:
+    """
+    Recebe um arquivo (multipart/form-data), salva temporariamente, gera uma URL,
+    e o processa. Ideal para clientes que não suportam Base64 grande.
+    """
+    import shutil
+    import uuid
+    from pathlib import Path
+    
+    try:
+        file_id = f"{uuid.uuid4()}-{file.filename}"
+        upload_path = Path("data/uploads") / file_id
+        
+        with open(upload_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        base_url = str(request.base_url).rstrip("/")
+        image_url = f"{base_url}/uploads/{file_id}"
+        
+        input_data = DiagramInput(
+            image_url=image_url,
+            model_type=model_type
+        )
+        
+        return await use_case.execute(input_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
+        if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
+            status_code = 500
+        raise HTTPException(status_code=status_code, detail=f"Erro na análise: {exc}")
 
 
 @router.post(
