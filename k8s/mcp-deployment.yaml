@@ -32,16 +32,18 @@ spec:
               value: "8001"
           readinessProbe:
             httpGet:
-              path: /mcp/
-              port: 8001
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /mcp/
+              path: /mcp/health
               port: 8001
             initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /mcp/health
+              port: 8001
+            initialDelaySeconds: 20
             periodSeconds: 20
+            timeoutSeconds: 5
       restartPolicy: Always
 ---
 apiVersion: v1
