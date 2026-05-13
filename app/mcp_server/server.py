@@ -48,21 +48,20 @@ def _serialize(output: Any) -> str:
     return json.dumps(output, indent=2, ensure_ascii=False)
 
 
-async def _call_api(endpoint: str, file_path: str | None, image_base64: str | None) -> str:
+async def _call_api(endpoint: str, file_path: str | None, image_base64: str | None, image_url: str | None = None) -> str:
     try:
-        b64 = image_base64
-        if file_path and not b64:
-            b64 = await _read_file_as_base64(file_path)
-
-        if not b64:
-            return "Erro: É necessário fornecer 'image_base64' (recomendado para uso remoto) ou um 'file_path' válido no servidor."
-
         payload = {
-            "image_base64": b64,
             "model_type": "gemini"
         }
-        if file_path:
+
+        if image_url:
+            payload["image_url"] = image_url
+        elif image_base64:
+            payload["image_base64"] = image_base64
+        elif file_path:
             payload["file_path"] = file_path
+        else:
+            return "Erro: Forneça 'image_url', 'image_base64' ou 'file_path'."
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
@@ -77,31 +76,27 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
 
 
 @mcp.tool()
-async def analyze_diagram(file_path: str = None, image_base64: str = None) -> str:
+async def analyze_diagram(file_path: str = None, image_base64: str = None, image_url: str = None) -> str:
     """Analisa um diagrama arquitetural (imagem ou PDF).
 
-    IMPORTANTE: Se estiver usando este servidor remotamente (ex: Kubernetes),
-    você DEVE fornecer 'image_base64' pois o servidor não consegue acessar seus arquivos locais.
-
     Args:
-        file_path: Caminho do arquivo NO SERVIDOR.
-        image_base64: Conteúdo do arquivo em base64 (Recomendado para uso remoto).
+        file_path: Caminho local do arquivo. Recomendado para arquivos grandes (>5MB).
+        image_base64: Conteúdo do arquivo em base64.
+        image_url: URL pública da imagem. MELHOR alternativa para arquivos muito grandes se o servidor for remoto.
     """
-    return await _call_api("/analyze/diagram/sync", file_path, image_base64)
+    return await _call_api("/analyze/diagram/sync", file_path, image_base64, image_url)
 
 
 @mcp.tool()
-async def analyze_security(file_path: str = None, image_base64: str = None) -> str:
+async def analyze_security(file_path: str = None, image_base64: str = None, image_url: str = None) -> str:
     """Realiza análise de segurança de um diagrama arquitetural.
 
-    IMPORTANTE: Se estiver usando este servidor remotamente (ex: Kubernetes),
-    você DEVE fornecer 'image_base64' pois o servidor não consegue acessar seus arquivos locais.
-
     Args:
-        file_path: Caminho do arquivo NO SERVIDOR.
-        image_base64: Conteúdo do arquivo em base64 (Recomendado para uso remoto).
+        file_path: Caminho local do arquivo. Recomendado para arquivos grandes (>5MB).
+        image_base64: Conteúdo do arquivo em base64.
+        image_url: URL pública da imagem. MELHOR alternativa para arquivos muito grandes se o servidor for remoto.
     """
-    return await _call_api("/analyze/security/sync", file_path, image_base64)
+    return await _call_api("/analyze/security/sync", file_path, image_base64, image_url)
 
 
 if __name__ == "__main__":

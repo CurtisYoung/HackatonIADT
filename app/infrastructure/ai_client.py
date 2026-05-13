@@ -107,31 +107,43 @@ class AIClient:
         if "gemini" in self.model_name and not os.environ.get("GEMINI_API_KEY"):
             raise ValueError("GEMINI_API_KEY não definido.")
 
-    async def _call_model(self, base64_str: str, system_prompt: str, model_name: str) -> str:
+    async def _call_model(self, base64_str: str | None, system_prompt: str, model_name: str, image_url: str | None = None) -> str:
         """Executa a chamada ao modelo LiteLLM e devolve o conteúdo JSON bruto."""
-        from app.core.validation import detect_mime_from_base64
-        mime_type = detect_mime_from_base64(base64_str)
+        if image_url:
+            content = [
+                {"type": "text", "text": system_prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_url},
+                },
+            ]
+            log.info(f"LiteLLM: model={model_name}, url={image_url}")
+        else:
+            from app.core.validation import detect_mime_from_base64
+            mime_type = detect_mime_from_base64(base64_str)
 
-        mime_to_format = {
-            "image/jpeg": "jpeg",
-            "image/png": "png",
-            "application/pdf": "pdf"
-        }
-        format_type = mime_to_format.get(mime_type, "jpeg")
+            mime_to_format = {
+                "image/jpeg": "jpeg",
+                "image/png": "png",
+                "application/pdf": "pdf"
+            }
+            format_type = mime_to_format.get(mime_type, "jpeg")
+
+            content = [
+                {"type": "text", "text": system_prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/{format_type};base64,{base64_str}"},
+                },
+            ]
+            log.info(f"LiteLLM: model={model_name}, mime={format_type}")
 
         messages = [
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": system_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/{format_type};base64,{base64_str}"},
-                    },
-                ],
+                "content": content,
             }
         ]
-        log.info(f"LiteLLM: model={model_name}, mime={format_type}")
 
         try:
             response = await litellm.acompletion(
@@ -150,13 +162,13 @@ class AIClient:
             raw_content = match.group(1)
         return raw_content
 
-    async def _analyze(self, base64_str: str, system_prompt: str, output_schema: BaseModel) -> BaseModel:
+    async def _analyze(self, base64_str: str | None, system_prompt: str, output_schema: BaseModel, image_url: str | None = None) -> BaseModel:
         """Envia a imagem para o modelo de IA e retorna a análise estruturada."""
         attempt = 0
         current_key = self.model_key
         while attempt <= _MAX_RETRIES:
             try:
-                raw_json = await self._call_model(base64_str, system_prompt, SUPPORTED_MODELS[current_key])
+                raw_json = await self._call_model(base64_str, system_prompt, SUPPORTED_MODELS[current_key], image_url=image_url)
                 return output_schema.model_validate_json(raw_json)
             except ValidationError as ve:
                 attempt += 1
@@ -184,8 +196,8 @@ class AIClient:
                 raise
         raise RuntimeError("Falha após múltiplas tentativas.")
 
-    async def analyze_image(self, base64_str: str) -> AIAnalysisOutput:
-        return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput)
+    async def analyze_image(self, base64_str: str | None = None, image_url: str | None = None) -> AIAnalysisOutput:
+        return await self._analyze(base64_str, _SYSTEM_PROMPT, AIAnalysisOutput, image_url=image_url)
 
-    async def analyze_security(self, base64_str: str) -> SecurityAnalysisOutput:
-        return await self._analyze(base64_str, _SECURITY_SYSTEM_PROMPT, SecurityAnalysisOutput)
+    async def analyze_security(self, base64_str: str | None = None, image_url: str | None = None) -> SecurityAnalysisOutput:
+        return await self._analyze(base64_str, _SECURITY_SYSTEM_PROMPT, SecurityAnalysisOutput, image_url=image_url)

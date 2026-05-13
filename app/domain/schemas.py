@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 _GENERIC_COMPONENT_TERMS: frozenset[str] = frozenset(
     {
@@ -18,9 +18,16 @@ class DiagramInput(BaseModel):
     """Payload de entrada para análise, suportando múltiplos tipos e modelos."""
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    image_base64: str
+    image_base64: Optional[str] = None
     file_path: Optional[str] = None
+    image_url: Optional[str] = None
     model_type: Literal["gemini", "bedrock"] = "bedrock"
+
+    @model_validator(mode="after")
+    def check_at_least_one(self) -> "DiagramInput":
+        if not self.image_base64 and not self.file_path and not self.image_url:
+            raise ValueError("É necessário fornecer 'image_base64', 'file_path' ou 'image_url'.")
+        return self
 
 
 class TaskStatus(BaseModel):

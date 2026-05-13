@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +12,7 @@ from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, Architectu
 from app.main import app
 
 ENDPOINT = "/analyze/diagram/sync"
+API_KEY = os.getenv("API_KEY", "default-secret-key")
 
 VALID_PAYLOAD: dict = {
     "image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4",
@@ -63,84 +65,6 @@ def _override_dependencies():
 
 @pytest.fixture
 def client(_override_dependencies):
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
-
-
-def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> None:
-    response = client.post(
-        ENDPOINT,
-        json=VALID_PAYLOAD,
-        headers={"X-API-Key": "default-secret-key"},
-    )
-
-    assert response.status_code == 200, response.json()
-
-    body = response.json()
-    assert EXPECTED_KEYS.issubset(body.keys())
-
-
-def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
-    response = client.post(
-        ENDPOINT,
-        json=VALID_PAYLOAD,
-        headers={"X-API-Key": "default-secret-key"}
-    )
-    body = response.json()
-
-    for key in EXPECTED_KEYS:
-        assert isinstance(body[key], list), f"Field '{key}' should be a list"
-
-
-def test_analyze_diagram_missing_image_base64_returns_422(client: TestClient) -> None:
-    response = client.post(
-        ENDPOINT,
-        json={"file_path": "test.png"},
-        headers={"X-API-Key": "default-secret-key"}
-    )
-
-    assert response.status_code == 422
-
-
-def test_analyze_diagram_with_file_path(client: TestClient) -> None:
-    payload = {"image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4", "file_path": "diagram.png"}
-    response = client.post(
-        ENDPOINT,
-        json=payload,
-        headers={"X-API-Key": "default-secret-key"}
-    )
-
-    assert response.status_code == 200, response.json()
-
-
-def test_analyze_diagram_returns_500_when_validation_fails(client: TestClient) -> None:
-    from pydantic import ValidationError
-
-    def _mock_invalid_client() -> AsyncMock:
-        mock = AsyncMock()
-        mock.analyze_image.side_effect = ValidationError.from_exception_data(
-            "AIAnalysisOutput", [{"type": "missing", "loc": ("test",), "msg": "test"}]
-        )
-        return mock
-
-    app.dependency_overrides[_get_ai_client] = _mock_invalid_client
-    try:
-        response = client.post(
-            ENDPOINT,
-            json=VALID_PAYLOAD,
-            headers={"X-API-Key": "default-secret-key"}
-        )
-        assert response.status_code in (422, 500)
-    finally:
-        app.dependency_overrides[_get_ai_client] = _mock_ai_client
-    app.dependency_overrides[_get_redis] = lambda: MagicMock()
-    app.dependency_overrides[_get_repository] = _mock_repository
-    yield
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def client(_override_dependencies):
     with TestClient(app) as c:
         yield c
 
@@ -149,7 +73,7 @@ def test_analyze_diagram_returns_200_and_correct_schema(client: TestClient) -> N
     response = client.post(
         ENDPOINT,
         json=VALID_PAYLOAD,
-        headers={"X-API-Key": "default-secret-key"},
+        headers={"X-API-Key": API_KEY},
     )
 
     assert response.status_code == 200, response.json()
@@ -162,7 +86,7 @@ def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
     response = client.post(
         ENDPOINT,
         json=VALID_PAYLOAD,
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
     body = response.json()
 
@@ -170,25 +94,30 @@ def test_analyze_diagram_fields_are_lists(client: TestClient) -> None:
         assert isinstance(body[key], list), f"Field '{key}' should be a list"
 
 
-def test_analyze_diagram_missing_image_base64_returns_422(client: TestClient) -> None:
+def test_analyze_diagram_missing_all_returns_422(client: TestClient) -> None:
     response = client.post(
         ENDPOINT,
-        json={"file_path": "test.png"},
-        headers={"X-API-Key": "default-secret-key"}
+        json={},
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 422
 
 
-def test_analyze_diagram_with_file_path(client: TestClient) -> None:
-    payload = {"image_base64": "iVBORw0KGgp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4", "file_path": "diagram.png"}
+def test_analyze_diagram_with_file_path_only(client: TestClient, tmp_path) -> None:
+    # Cria um arquivo temporário para o teste
+    img_path = tmp_path / "test.png"
+    # PNG minimal magic bytes
+    img_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 10)
+    
+    payload = {"file_path": str(img_path)}
     response = client.post(
         ENDPOINT,
         json=payload,
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
 
 
 def test_analyze_diagram_returns_500_when_validation_fails(client: TestClient) -> None:
@@ -206,8 +135,9 @@ def test_analyze_diagram_returns_500_when_validation_fails(client: TestClient) -
         response = client.post(
             ENDPOINT,
             json=VALID_PAYLOAD,
-            headers={"X-API-Key": "default-secret-key"}
+            headers={"X-API-Key": API_KEY}
         )
-        assert response.status_code in (422, 500)
+        # ValidationError do Pydantic no use case resulta em 500 via o catch-all do FastAPI route
+        assert response.status_code == 500
     finally:
         app.dependency_overrides[_get_ai_client] = _mock_ai_client
