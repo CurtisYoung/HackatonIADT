@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 # Carrega .env automaticamente
 _project_root = Path(__file__).resolve().parents[2]
