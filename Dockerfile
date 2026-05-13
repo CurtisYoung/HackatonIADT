@@ -1,5 +1,5 @@
 # Stage 1: Builder
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -14,9 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install dependencies into a wheels directory to avoid reinstalling them in the final stage
+# Install dependencies into a wheels directory
+# Removed --no-deps to ensure all transitive dependencies are wheeled
 COPY requirements.txt .
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 
 # Stage 2: Final
 FROM python:3.11-slim
@@ -25,7 +26,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Install only runtime system dependencies
-# libgl1 and libglib2.0-0 are usually for OpenCV/Vision tasks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -33,10 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy wheels from builder and install
+# Copy wheels from builder and install using --find-links for better reliability
 COPY --from=builder /app/wheels /wheels
 COPY requirements.txt .
-RUN pip install --no-cache-dir /wheels/*
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
