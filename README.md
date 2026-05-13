@@ -391,7 +391,7 @@ Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code:
     "diagram-analyzer": {
       "url": "http://localhost:8001/mcp",
       "env": {
-        "IADT_API_URL": "http://localhost:8000",
+        "IADT_API_URL": "https://iadt.matheuslucena.dev",
         "API_KEY": "your-api-key-for-auth"
       }
     }
@@ -408,7 +408,16 @@ Se você utiliza extensões como **Cline** ou **Roo Code** no VS Code:
 {
   "mcpServers": {
     "diagram-analyzer": {
-      "url": "http://localhost:8001/mcp"
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "IADT_API_URL=https://iadt.matheuslucena.dev",
+        "-e", "API_KEY=your-api-key-for-auth",
+        "ghcr.io/curtisyoung/hackatoniadt:latest",
+        "python", "-m", "app.mcp_server.main"
+      ]
     }
   }
 }
