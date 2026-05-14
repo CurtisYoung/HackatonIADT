@@ -39,10 +39,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
 # Copy the rest of the application
-COPY . .
-
 RUN useradd -ms /bin/sh appuser
+RUN mkdir -p /app/data/uploads /app/data/outputs && chown -R appuser:appuser /app
+
 USER appuser
+COPY --chown=appuser:appuser . .
 
 EXPOSE 8000
 

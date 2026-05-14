@@ -22,11 +22,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
 # Copy only MCP code
-COPY app/mcp_server ./app/mcp_server
-COPY .env.example .env
-
 RUN useradd -ms /bin/sh appuser
+RUN chown -R appuser:appuser /app
+
 USER appuser
+COPY --chown=appuser:appuser app/mcp_server ./app/mcp_server
+COPY --chown=appuser:appuser .env.example .env
 
 EXPOSE 8001
 
