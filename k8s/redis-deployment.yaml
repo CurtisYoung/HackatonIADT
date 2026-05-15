@@ -15,9 +15,19 @@ spec:
       labels:
         app: hackaton-iadt-redis
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
       containers:
         - name: redis
-          image: docker.io/library/redis:7
+          image: public.ecr.aws/docker/library/redis:7-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
           args: ["redis-server", "--save", "", "--appendonly", "no"]
           ports:
             - containerPort: 6379

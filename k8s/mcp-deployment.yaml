@@ -15,9 +15,19 @@ spec:
       labels:
         app: hackaton-iadt-mcp
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: mcp-server
           image: ghcr.io/curtisyoung/hackatoniadt-mcp:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8001
           env:
