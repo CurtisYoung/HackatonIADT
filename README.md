@@ -241,6 +241,24 @@ curl -X POST "http://localhost:8000/analyze/diagram/sync" \
   }'
 ```
 
+## Exemplo de configuração do cliente MCP
+
+```json
+{
+  "servers": {
+    "teste-mcp-server": {
+      "url": "https://iadt.matheuslucena.dev/mcp",
+      "type": "http",
+      "headers": {
+        "X-API-Key": "SEU_TOKEN_API_KEY_AQUI"
+      }
+    }
+  },
+  "inputs": []
+}
+```
+
+
 ## 6. Execução Local com Docker
 
 Para executar o projeto localmente com Docker, siga estas etapas:

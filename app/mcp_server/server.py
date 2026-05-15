@@ -18,7 +18,9 @@ _project_root = Path(__file__).resolve().parents[2]
 load_dotenv(_project_root / ".env")
 
 API_BASE_URL = os.getenv("IADT_API_URL", "http://localhost:8000")
-API_KEY = os.getenv("API_KEY", "default-secret-key")
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    raise RuntimeError("API_KEY environment variable must be set for MCP server")
 
 mcp = FastMCP("diagram-analyzer")
 
