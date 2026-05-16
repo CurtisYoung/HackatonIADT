@@ -35,11 +35,11 @@ load_dotenv()
 
 API_URL = "https://iadt.matheuslucena.dev/analyze-diagram"
 DEFAULT_IMAGE = Path(__file__).parent / "architecture.png"
+console = Console()
+
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     console.print("[bold yellow]Aviso:[/bold yellow] API_KEY não encontrada no ambiente ou .env")
-
-console = Console()
 
 
 def load_image_base64(image_path: Path) -> str:

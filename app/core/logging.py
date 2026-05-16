@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json
 
 def get_logger(name: str) -> logging.Logger:
     """Configura e retorna um logger com formato JSON."""
@@ -11,7 +11,7 @@ def get_logger(name: str) -> logging.Logger:
     # Evita adicionar handlers duplicados
     if not logger.handlers:
         handler = logging.StreamHandler()
-        formatter = jsonlogger.JsonFormatter(
+        formatter = json.JsonFormatter(
             fmt="%(asctime)s %(name)s %(levelname)s %(message)s"
         )
         handler.setFormatter(formatter)
