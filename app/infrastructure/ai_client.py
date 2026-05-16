@@ -123,7 +123,7 @@ class AIClient:
             log.info(f"LiteLLM: model={model_name}, url={image_url}")
         else:
             from app.core.validation import detect_mime_from_base64
-            mime_type = detect_mime_from_base64(base64_str)
+            mime_type, cleaned_b64 = detect_mime_from_base64(base64_str)
 
             mime_to_format = {
                 "image/jpeg": "jpeg",
@@ -136,7 +136,7 @@ class AIClient:
                 {"type": "text", "text": system_prompt},
                 {
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/{format_type};base64,{base64_str}"},
+                    "image_url": {"url": f"data:image/{format_type};base64,{cleaned_b64}"},
                 },
             ]
             log.info(f"LiteLLM: model={model_name}, mime={format_type}")

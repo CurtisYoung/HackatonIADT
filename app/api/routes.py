@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import json
 import uuid
-from typing import Literal
+from typing import Literal, Callable
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, UploadFile, File, Form, Request
 from pydantic import ValidationError
@@ -29,7 +29,8 @@ def _get_ai_client(model_id: Literal["gemini", "bedrock"] = "bedrock") -> AIClie
         raise HTTPException(status_code=500, detail=f"Erro de configuração: {exc}")
 
 
-_get_gemini_client = _get_ai_client  # Alias para compatibilidade com testes
+def _get_ai_client_factory() -> Callable:
+    return _get_ai_client
 
 
 def _get_repository() -> FileOutputRepository:
@@ -147,7 +148,8 @@ async def analyze_diagram_upload(
     request: Request,
     file: UploadFile = File(...),
     model_type: Literal["gemini", "bedrock"] = Form("bedrock"),
-    use_case: AnalyzeDiagramUseCase = Depends(_get_diagram_use_case),
+    repo: FileOutputRepository = Depends(_get_repository),
+    ai_factory: Callable = Depends(_get_ai_client_factory),
 ) -> AIAnalysisOutput:
     """
     Recebe um arquivo (multipart/form-data), salva temporariamente, gera uma URL,
@@ -156,22 +158,24 @@ async def analyze_diagram_upload(
     import shutil
     import uuid
     from pathlib import Path
-    
+
     try:
         file_id = f"{uuid.uuid4()}-{file.filename}"
         upload_path = Path("data/uploads") / file_id
-        
+
         with open(upload_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-            
+
         base_url = str(request.base_url).rstrip("/")
         image_url = f"{base_url}/uploads/{file_id}"
-        
+
         input_data = DiagramInput(
             image_url=image_url,
             model_type=model_type
         )
-        
+
+        client = ai_factory(model_id=model_type)
+        use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
         return await use_case.execute(input_data)
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
@@ -194,12 +198,15 @@ async def analyze_diagram_upload(
 )
 async def analyze_diagram_sync(
     input_data: DiagramInput,
-    use_case: AnalyzeDiagramUseCase = Depends(_get_diagram_use_case),
+    repo: FileOutputRepository = Depends(_get_repository),
+    ai_factory: Callable = Depends(_get_ai_client_factory),
 ) -> AIAnalysisOutput:
     """
     Mantém o endpoint síncrono original para casos de uso diretos.
     """
     try:
+        client = ai_factory(model_id=input_data.model_type)
+        use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
         return await use_case.execute(input_data)
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
@@ -218,12 +225,15 @@ async def analyze_diagram_sync(
 )
 async def analyze_security_sync(
     input_data: DiagramInput,
-    use_case: SecurityAnalysisUseCase = Depends(_get_security_use_case),
+    repo: FileOutputRepository = Depends(_get_repository),
+    ai_factory: Callable = Depends(_get_ai_client_factory),
 ) -> SecurityAnalysisOutput:
     """
     Endpoint síncrono para análise de segurança.
     """
     try:
+        client = ai_factory(model_id=input_data.model_type)
+        use_case = SecurityAnalysisUseCase(ai_client=client, repository=repo)
         return await use_case.execute(input_data)
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")

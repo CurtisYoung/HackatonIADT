@@ -1,11 +1,12 @@
 from __future__ import annotations
 import json
 import uuid
+import os
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.api.routes import _get_redis, _get_ai_client, _get_repository
+from app.api.routes import _get_redis, _get_ai_client_factory, _get_repository
 from app.domain.schemas import AIAnalysisOutput, IdentifiedComponent, ArchitecturalRisk, Recommendation
 
 _MOCK_REDIS = MagicMock()
@@ -29,13 +30,21 @@ _FAKE_OUTPUT = AIAnalysisOutput(
     ],
 )
 
+API_KEY = os.getenv("API_KEY", "default-secret-key")
+
 _MOCK_AI_CLIENT.analyze_image.return_value = _FAKE_OUTPUT
+
+
+def _mock_ai_client_factory() -> MagicMock:
+    factory = MagicMock()
+    factory.return_value = _MOCK_AI_CLIENT
+    return factory
 
 
 @pytest.fixture
 def setup_overrides():
     app.dependency_overrides[_get_redis] = lambda: _MOCK_REDIS
-    app.dependency_overrides[_get_ai_client] = lambda: _MOCK_AI_CLIENT
+    app.dependency_overrides[_get_ai_client_factory] = _mock_ai_client_factory
     app.dependency_overrides[_get_repository] = lambda: _MOCK_REPO
     yield
     app.dependency_overrides.clear()
@@ -54,7 +63,7 @@ def test_analyze_diagram_async_creates_task(client: TestClient):
     response = client.post(
         "/analyze/diagram/async",
         json=payload,
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 202
@@ -68,7 +77,7 @@ def test_get_analysis_status_not_found(client: TestClient):
 
     response = client.get(
         "/analyze/status/non-existent",
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 404
@@ -80,7 +89,7 @@ def test_get_analysis_status_processing(client: TestClient):
 
     response = client.get(
         f"/analyze/status/{task_id}",
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 200
@@ -95,7 +104,7 @@ def test_get_analysis_result_completed(client: TestClient):
 
     response = client.get(
         f"/analyze/result/{task_id}",
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 200
@@ -110,7 +119,7 @@ def test_get_analysis_result_still_processing(client: TestClient):
 
     response = client.get(
         f"/analyze/result/{task_id}",
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 400
@@ -123,7 +132,7 @@ def test_get_analysis_result_not_found(client: TestClient):
     task_id = str(uuid.uuid4())
     response = client.get(
         f"/analyze/result/{task_id}",
-        headers={"X-API-Key": "default-secret-key"}
+        headers={"X-API-Key": API_KEY}
     )
 
     assert response.status_code == 404

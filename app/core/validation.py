@@ -43,33 +43,34 @@ def compress_image_if_needed(image_bytes: bytes, max_size_mb: float = 3.0) -> by
     return output.getvalue()
 
 
-def detect_mime_from_base64(b64_string: str) -> str:
-    """Retorna o tipo MIME detectado a partir de uma string Base64.
+def detect_mime_from_base64(b64_string: str) -> tuple[str, str]:
+    """Retorna o tipo MIME detectado e a string Base64 limpa.
 
     Suporta JPEG, PNG e PDF. Levanta ``ValueError`` se o tipo não for reconhecido.
     """
+    cleaned_b64 = b64_string
     # Remove prefixo data:image/...;base64, se presente
     if b64_string.startswith('data:'):
         # Extrai a parte após base64,
         parts = b64_string.split(',', 1)
         if len(parts) != 2:
             raise ValueError('Formato data URL inválido')
-        b64_string = parts[1]
+        cleaned_b64 = parts[1]
     
     try:
         # Decodifica apenas o início para identificar o tipo (máx 32 bytes decodificados)
         # Base64 encoding ratio é 4:3, então ~44 caracteres base64 dão ~33 bytes.
-        sample = base64.b64decode(b64_string[:64], validate=False)
+        sample = base64.b64decode(cleaned_b64[:64], validate=False)
     except binascii.Error as exc:
         raise ValueError('Base64 inválido') from exc
 
     # JPEG magic numbers: FF D8 FF
     if sample.startswith(b"\xFF\xD8\xFF"):
-        return "image/jpeg"
+        return "image/jpeg", cleaned_b64
     # PNG magic numbers: 89 50 4E 47 0D 0A 1A 0A
     if sample.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
+        return "image/png", cleaned_b64
     # PDF magic: %PDF-
     if sample.startswith(b"%PDF-"):
-        return "application/pdf"
+        return "application/pdf", cleaned_b64
     raise ValueError('Tipo de arquivo não suportado. Apenas JPEG, PNG ou PDF são aceitos')

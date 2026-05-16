@@ -13,9 +13,13 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
+from app.core.logging import get_logger
+
 # Carrega .env automaticamente
 _project_root = Path(__file__).resolve().parents[2]
 load_dotenv(_project_root / ".env")
+
+log = get_logger(__name__)
 
 API_BASE_URL = os.getenv("IADT_API_URL", "http://localhost:8000")
 API_KEY = os.getenv("API_KEY")
@@ -65,6 +69,8 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
         else:
             return "Erro: Forneça 'image_url', 'image_base64' ou 'file_path'."
 
+        log.info(f"MCP calling API: {endpoint}, model=gemini")
+
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{API_BASE_URL}{endpoint}",
@@ -74,6 +80,7 @@ async def _call_api(endpoint: str, file_path: str | None, image_base64: str | No
             response.raise_for_status()
             return _serialize(response.json())
     except Exception as exc:
+        log.error(f"MCP API error on {endpoint}: {exc}", exc_info=True)
         return f"Erro na operação: {exc}"
 
 
