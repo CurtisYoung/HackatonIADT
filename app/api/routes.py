@@ -14,6 +14,9 @@ from app.infrastructure.ai_client import AIClient
 from app.infrastructure.file_repository import FileOutputRepository
 from app.usecases.analyze_diagram import AnalyzeDiagramUseCase
 from app.usecases.security_analysis import SecurityAnalysisUseCase
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 # ---------- Dependências ----------
 
