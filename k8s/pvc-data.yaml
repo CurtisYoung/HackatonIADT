@@ -1,4 +1,21 @@
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: hackaton-iadt-data-pv
+  namespace: iadt
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: "" 
+  nfs:
+    server: 10.0.25.86  # 👈 Coloque o IP do seu Mount Target aqui
+    path: "/FileSystem-20260516-1713-11" # 👈 Coloque o Export Path aqui
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: hackaton-iadt-data-pvc
@@ -8,5 +25,6 @@ spec:
     - ReadWriteMany
   resources:
     requests:
-      storage: 50Gi
-  storageClassName: oci-bv
+      storage: 1Gi # 🟢 Ajustado para bater com o 1Gi do PV
+  storageClassName: "" # Mantém vazio
+  volumeName: hackaton-iadt-data-pv
