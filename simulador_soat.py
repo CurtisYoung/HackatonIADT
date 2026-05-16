@@ -18,19 +18,26 @@ Como rodar:
 
 from __future__ import annotations
 
+import os
 import base64
 import json
 import sys
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-API_URL = "http://localhost:8000/analyze-diagram"
+load_dotenv()
+
+API_URL = "https://iadt.matheuslucena.dev/analyze-diagram"
 DEFAULT_IMAGE = Path(__file__).parent / "architecture.png"
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    console.print("[bold yellow]Aviso:[/bold yellow] API_KEY não encontrada no ambiente ou .env")
 
 console = Console()
 
@@ -64,7 +71,7 @@ def call_api(image_base64: str) -> dict:
     ))
 
     with httpx.Client(timeout=120.0) as client:
-        response = client.post(API_URL, json=payload, headers={"X-API-Key": "your-api-key-for-auth"})
+        response = client.post(API_URL, json=payload, headers={"X-API-Key": API_KEY})
 
     response.raise_for_status()
     return response.json()

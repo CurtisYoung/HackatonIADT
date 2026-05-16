@@ -51,6 +51,11 @@ spec:
                 secretKeyRef:
                   name: iadt-secrets
                   key: aws_region_name
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: iadt-secrets
+                  key: aws_region_name
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
