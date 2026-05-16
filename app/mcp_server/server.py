@@ -47,6 +47,7 @@ def _sniff_extension(data: bytes) -> str:
 
 
 def _persist_base64(image_base64: str) -> str:
+    """Persist a base64-encoded file to the upload directory and return its path."""
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     data = base64.b64decode(image_base64, validate=False)
     ext = _sniff_extension(data)
