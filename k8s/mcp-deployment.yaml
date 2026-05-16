@@ -49,6 +49,9 @@ spec:
               value: "http://hackaton-iadt-service:80"
             - name: MCP_PORT
               value: "8001"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /app/data
           readinessProbe:
             httpGet:
               path: /health
@@ -63,6 +66,10 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 5
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: hackaton-iadt-data-pvc
       restartPolicy: Always
 ---
 apiVersion: v1

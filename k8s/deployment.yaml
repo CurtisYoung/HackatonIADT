@@ -72,6 +72,9 @@ spec:
                   key: api_key
             - name: REDIS_HOST
               value: "hackaton-iadt-redis"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /app/data
           command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
           readinessProbe:
             httpGet:
@@ -85,6 +88,10 @@ spec:
               port: 8000
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: hackaton-iadt-data-pvc
       restartPolicy: Always
 
 
