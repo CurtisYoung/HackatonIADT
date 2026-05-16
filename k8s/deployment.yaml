@@ -19,6 +19,36 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+      initContainers:
+        - name: fix-nfs-perms
+          image: ghcr.io/curtisyoung/hackatoniadt:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              find /app/data -path /app/data/.snapshot -prune -o -exec chown 1000:1000 {} + 2>/dev/null || true
+              find /app/data -path /app/data/.snapshot -prune -o -type d -exec chmod 775 {} + 2>/dev/null || true
+              find /app/data -path /app/data/.snapshot -prune -o -type f -exec chmod 664 {} + 2>/dev/null || true
+              mkdir -p /app/data/uploads /app/data/outputs
+              chown 1000:1000 /app/data/uploads /app/data/outputs
+              chmod 775 /app/data/uploads /app/data/outputs
+              ls -lan /app/data
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - FOWNER
+                - DAC_OVERRIDE
+          volumeMounts:
+            - name: shared-data
+              mountPath: /app/data
       containers:
         - name: hackaton-iadt
           image: ghcr.io/curtisyoung/hackatoniadt:latest
@@ -93,5 +123,3 @@ spec:
           persistentVolumeClaim:
             claimName: hackaton-iadt-data-pvc
       restartPolicy: Always
-
-
