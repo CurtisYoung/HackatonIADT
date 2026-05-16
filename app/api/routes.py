@@ -209,8 +209,10 @@ async def analyze_diagram_sync(
         use_case = AnalyzeDiagramUseCase(ai_client=client, repository=repo)
         return await use_case.execute(input_data)
     except ValidationError as exc:
+        log.error(f"Resposta do modelo inválida: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
     except Exception as exc:
+        log.error(f"Erro na análise: {exc}", exc_info=True)
         # Tenta extrair código de status se disponível (ex: de erros do SDK)
         status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
         if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
@@ -236,8 +238,10 @@ async def analyze_security_sync(
         use_case = SecurityAnalysisUseCase(ai_client=client, repository=repo)
         return await use_case.execute(input_data)
     except ValidationError as exc:
+        log.error(f"Resposta do modelo inválida (segurança): {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Resposta do modelo inválida: {exc}")
     except Exception as exc:
+        log.error(f"Erro na análise de segurança: {exc}", exc_info=True)
         # Tenta extrair código de status se disponível (ex: de erros do SDK)
         status_code = getattr(exc, "status_code", getattr(exc, "code", 500))
         if not isinstance(status_code, int) or status_code < 400 or status_code > 599:

@@ -35,8 +35,12 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = request_id
             return response
         except Exception as e:
-            # Log do erro e propaga
-            log.error(f"Error processing request {request_id}: {e}", extra={"request_id": request_id})
+            # Log do erro com traceback e propaga
+            log.error(
+                f"Error processing request {request_id}: {e}", 
+                extra={"request_id": request_id},
+                exc_info=True
+            )
             raise
 
 app = FastAPI(
